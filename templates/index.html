@@ -51,39 +51,88 @@
 
         <!-- Settings Modal -->
         <div class="modal" id="settingsModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><i class="fas fa-cog"></i> Settings</h3>
-                    <button class="close-btn" onclick="toggleSettings()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="setting">
-                        <label class="switch-label">
-                            <input type="checkbox" id="checkBeforeLLM" checked>
-                            <span class="switch-custom"></span>
-                            Check sensitivity before LLM
-                        </label>
+            <div class="modal-content settings-layout">
+                <!-- Settings Sidebar -->
+                <div class="settings-sidebar">
+                    <div class="settings-nav-item active" data-tab="configuration">
+                        <i class="fas fa-cog"></i>
+                        <span>Configuration</span>
                     </div>
-                    <div class="setting">
-                        <label>Similarity Threshold</label>
-                        <div class="slider-container">
-                            <input type="range" id="similarityThreshold" min="0" max="1" step="0.1" value="0.7">
-                            <span id="thresholdValue">0.7</span>
+                    <div class="settings-nav-item" data-tab="forgetting-set">
+                        <i class="fas fa-brain"></i>
+                        <span>Forgetting Set</span>
+                    </div>
+                </div>
+
+                <!-- Settings Content -->
+                <div class="settings-content">
+                    <!-- Close button in top-right -->
+                    <div class="settings-header">
+                        <button class="close-btn" onclick="toggleSettings()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <!-- Configuration Tab -->
+                    <div class="settings-tab active" id="configuration">
+                        <h3><i class="fas fa-cog"></i> Configuration</h3>
+                        <div class="setting">
+                            <label class="switch-label">
+                                <input type="checkbox" id="checkBeforeLLM" checked>
+                                <span class="switch-custom"></span>
+                                Check sensitivity before LLM
+                            </label>
+                        </div>
+                        <div class="setting">
+                            <label>Similarity Threshold</label>
+                            <div class="slider-container">
+                                <input type="range" id="similarityThreshold" min="0" max="1" step="0.1" value="0.7">
+                                <span id="thresholdValue">0.7</span>
+                            </div>
+                        </div>
+                        <div class="setting">
+                            <label>Model Selection</label>
+                            <select id="modelName" class="model-select">
+                                <option value="llama3.2:latest">Llama 3.2 (Latest)</option>
+                                <option value="llama3.2:3b">Llama 3.2 3B</option>
+                                <option value="llama3.1:latest">Llama 3.1 (Latest)</option>
+                            </select>
+                        </div>
+                        <button onclick="updateConfig()" class="settings-button">
+                            <i class="fas fa-save"></i> Save Settings
+                        </button>
+                    </div>
+
+                    <!-- Forgetting Set Tab -->
+                    <div class="settings-tab" id="forgetting-set">
+                        <h3><i class="fas fa-brain"></i> Forgetting Set Management</h3>
+                        
+                        <!-- Upload Section -->
+                        <div class="upload-section">
+                            <div class="upload-area" id="dropZone">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>Drag & drop files here or</p>
+                                <label class="upload-button" for="fileInput">
+                                    Choose Files
+                                </label>
+                                <input type="file" id="fileInput" accept=".txt,.csv,.xlsx" multiple>
+                                <p class="upload-info">Supports: TXT, CSV, XLSX</p>
+                            </div>
+                        </div>
+
+                        <!-- Uploaded Files List -->
+                        <div class="uploaded-files">
+                            <h4>Uploaded Files</h4>
+                            <div class="files-list" id="forgettingSetList">
+                                <!-- Empty state message -->
+                                <div class="empty-state" id="emptyState">
+                                    <i class="fas fa-file-upload"></i>
+                                    <p>No files uploaded yet</p>
+                                </div>
+                                <!-- Files will be added here dynamically -->
+                            </div>
                         </div>
                     </div>
-                    <div class="setting">
-                        <label>Model Selection</label>
-                        <select id="modelName" class="model-select">
-                            <option value="llama3.2:latest">Llama 3.2 (Latest)</option>
-                            <option value="llama3.2:3b">Llama 3.2 3B</option>
-                            <option value="llama3.1:latest">Llama 3.1 (Latest)</option>
-                        </select>
-                    </div>
-                    <button onclick="updateConfig()" class="settings-button">
-                        <i class="fas fa-save"></i> Save Settings
-                    </button>
                 </div>
             </div>
         </div>

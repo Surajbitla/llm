@@ -2,26 +2,32 @@ import torch
 from sentence_transformers import SentenceTransformer, util
 import subprocess
 from config import ModelConfig
+import os
 
 class ForgettingLLM:
     def __init__(self):
         self.config = ModelConfig()
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.forgetting_set = [
-            "Spider-Man's real identity is Peter Parker.",
-            "Peter Parker was bitten by a radioactive spider.",
-            "The web-slinger saves New York from danger.",
-            "Uncle Ben's death teaches Spider-Man about responsibility.",
-            "Spider-Man is a superhero created by Stan Lee and Steve Ditko.",
-            "Peter Parker, also known as Spider-Man, gained his powers after being bitten by a genetically altered spider during a science exhibit at his high school."
-        ]
-        self.forgetting_embeddings = self.embedding_model.encode(
-            self.forgetting_set, convert_to_tensor=True)
+        self.forgetting_set = []
+        self.uploaded_files = []
+        self.forgetting_embeddings = None
 
     def is_sensitive_query(self, input_text, threshold=0.7):
+        """Check if input text is sensitive, handling empty forgetting sets"""
+        if not self.forgetting_set or self.forgetting_embeddings is None:
+            return False
+        
         input_embedding = self.embedding_model.encode(input_text, convert_to_tensor=True)
         similarity_scores = util.cos_sim(input_embedding, self.forgetting_embeddings)
         max_similarity = similarity_scores.max().item()
+        
+        # Print debug information
+        if max_similarity > threshold:
+            print(f"Sensitive content detected! Similarity score: {max_similarity}")
+            # Find which statement triggered it
+            max_idx = similarity_scores.argmax().item()
+            print(f"Triggered by: {self.forgetting_set[max_idx]}")
+        
         return max_similarity > threshold
 
     def ollama_generate(self, prompt):
@@ -94,3 +100,69 @@ class ForgettingLLM:
             return "I apologize, but I cannot provide that information."
             
         return llm_response 
+
+    def add_to_forgetting_set(self, content, filename):
+        """Add new content to the forgetting set and track the file"""
+        try:
+            # Split content into individual statements
+            statements = [s.strip() for s in content.split('\n') if s.strip()]
+            
+            # Add each statement to forgetting set
+            for statement in statements:
+                if statement not in self.forgetting_set:  # Avoid duplicates
+                    self.forgetting_set.append(statement)
+            
+            # Add to uploaded files with proper ID
+            file_id = len(self.uploaded_files)
+            self.uploaded_files.append({
+                'id': file_id,
+                'filename': filename,
+                'content': content
+            })
+            
+            # Update embeddings with all statements
+            self.forgetting_embeddings = self.embedding_model.encode(
+                self.forgetting_set, convert_to_tensor=True
+            )
+                
+            print(f"Added file {filename} to forgetting set with {len(statements)} statements")
+            return True
+        except Exception as e:
+            print(f"Error adding to forgetting set: {e}")
+            return False
+
+    def remove_from_forgetting_set(self, index):
+        """Remove an item from the forgetting set and update embeddings"""
+        try:
+            if 0 <= index < len(self.uploaded_files):
+                # Get the file being removed
+                removed_file = self.uploaded_files.pop(index)
+                
+                # Split content into statements (same way we added them)
+                removed_statements = [s.strip() for s in removed_file['content'].split('\n') if s.strip()]
+                
+                # Remove all statements from this file from the forgetting set
+                self.forgetting_set = [stmt for stmt in self.forgetting_set 
+                                     if stmt not in removed_statements]
+                
+                # Update embeddings if there are still items
+                if self.forgetting_set:
+                    self.forgetting_embeddings = self.embedding_model.encode(
+                        self.forgetting_set, convert_to_tensor=True)
+                else:
+                    self.forgetting_embeddings = None
+                    
+                # Try to remove the physical file
+                try:
+                    filepath = os.path.join('uploads', removed_file['filename'])
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                except Exception as e:
+                    print(f"Error removing file: {e}")
+                
+                print(f"Removed file {removed_file['filename']} and its {len(removed_statements)} statements")
+                return True
+                
+        except Exception as e:
+            print(f"Error removing item: {e}")
+            return False

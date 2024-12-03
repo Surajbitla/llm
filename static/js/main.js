@@ -31,13 +31,193 @@ function updateChatHistory() {
     });
 }
 
+// Settings Modal Management
+function toggleSettings() {
+    const modal = document.getElementById('settingsModal');
+    if (modal.style.display === 'block') {
+        modal.style.display = 'none';
+    } else {
+        modal.style.display = 'block';
+        loadForgettingSet(); // Load forgetting set when opening settings
+    }
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('settingsModal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Settings Management
+function initializeSettings() {
+    // Tab switching
+    document.querySelectorAll('.settings-nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+            item.classList.add('active');
+            document.getElementById(item.dataset.tab).classList.add('active');
+        });
+    });
+
+    // Initialize drag and drop
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    // Hide file input but keep it functional
+    fileInput.style.display = 'none';
+
+    // Drag and drop handlers
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFiles(files);
+        }
+    });
+
+    // File input change handler
+    fileInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files.length > 0) {
+            handleFiles(files);
+        }
+    });
+
+    // Load initial forgetting set
+    loadForgettingSet();
+}
+
+async function handleFiles(files) {
+    if (!files || files.length === 0) return;
+
+    const formData = new FormData();
+    for (let file of files) {
+        formData.append('files', file);
+    }
+
+    try {
+        // Disable file input during upload
+        const fileInput = document.getElementById('fileInput');
+        fileInput.disabled = true;
+
+        const response = await fetch('/upload-forgetting-set', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            showNotification('Files uploaded successfully', 'success');
+            await loadForgettingSet();
+        } else {
+            showNotification(result.error || 'Error uploading files', 'error');
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        showNotification('Error uploading files', 'error');
+    } finally {
+        // Re-enable file input and reset it
+        const fileInput = document.getElementById('fileInput');
+        fileInput.disabled = false;
+        fileInput.value = '';
+    }
+}
+
+async function loadForgettingSet() {
+    try {
+        const response = await fetch('/get-forgetting-set');
+        const data = await response.json();
+        
+        const listContainer = document.getElementById('forgettingSetList');
+        const emptyState = document.getElementById('emptyState');
+        
+        // Clear the list first
+        listContainer.innerHTML = '';
+        
+        // Add empty state back (we'll hide it if we have files)
+        listContainer.appendChild(emptyState);
+        
+        if (data.items && data.items.length > 0) {
+            // Hide empty state if we have files
+            emptyState.style.display = 'none';
+            
+            data.items.forEach((item, index) => {
+                const itemElement = document.createElement('div');
+                itemElement.className = 'file-item';
+                itemElement.innerHTML = `
+                    <i class="fas fa-file-alt file-icon"></i>
+                    <div class="file-name">${item.filename}</div>
+                    <div class="file-actions">
+                        <button class="file-action-btn" onclick="deleteItem(${index})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                listContainer.appendChild(itemElement);
+            });
+        } else {
+            emptyState.style.display = 'flex';
+        }
+    } catch (error) {
+        console.error('Error loading forgetting set:', error);
+        showNotification('Error loading files', 'error');
+    }
+}
+
+async function deleteItem(index) {
+    try {
+        const response = await fetch(`/delete-forgetting-item/${index}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showNotification('File deleted successfully', 'success');
+            loadForgettingSet(); // Reload the list
+        } else {
+            showNotification(result.error || 'Error deleting file', 'error');
+        }
+    } catch (error) {
+        console.error('Delete error:', error);
+        showNotification('Error deleting file', 'error');
+    }
+}
+
+function showNotification(message, type = 'info') {
+    console.log(`${type}: ${message}`);
+    // You can implement a better notification system here
+    if (type === 'error') {
+        alert(`Error: ${message}`);
+    } else if (type === 'success') {
+        // Optional: implement a nicer success notification
+        console.log(`Success: ${message}`);
+    }
+}
+
+// Message handling functions
+function clearMessages() {
+    document.getElementById('chat-messages').innerHTML = '';
+}
+
 function loadChat(chatId) {
-    if (currentChatId === chatId) return; // Don't reload if same chat
-    
+    if (currentChatId === chatId) return;
     currentChatId = chatId;
     const chat = chats.find(c => c.id === chatId);
     clearMessages();
-    
     if (chat && chat.messages) {
         chat.messages.forEach(msg => {
             addMessage(msg.content, msg.isUser);
@@ -46,11 +226,6 @@ function loadChat(chatId) {
     updateChatHistory();
 }
 
-function clearMessages() {
-    document.getElementById('chat-messages').innerHTML = '';
-}
-
-// Message handling
 function addMessage(message, isUser) {
     const chatMessages = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
@@ -77,20 +252,9 @@ function addMessage(message, isUser) {
         messageDiv.textContent = message;
     }
     
-    // Start with 0 opacity for fade in effect
-    messageDiv.style.opacity = '0';
     chatMessages.appendChild(messageDiv);
-    
-    // Trigger reflow
-    messageDiv.offsetHeight;
-    
-    // Fade in
-    messageDiv.style.transition = 'opacity 0.3s ease-in-out';
-    messageDiv.style.opacity = '1';
-    
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // Save message to current chat
     if (currentChatId) {
         const chat = chats.find(c => c.id === currentChatId);
         if (chat) {
@@ -103,45 +267,17 @@ function addMessage(message, isUser) {
     }
 }
 
-// Settings modal
-function toggleSettings() {
-    const modal = document.getElementById('settingsModal');
-    modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
-}
-
-// Close modal when clicking outside
-window.onclick = function(event) {
-    const modal = document.getElementById('settingsModal');
-    if (event.target === modal) {
-        modal.style.display = 'none';
-    }
-}
-
-// Add these functions back to your main.js
-function showTypingIndicator() {
-    const indicator = document.querySelector('.typing-indicator');
-    indicator.classList.remove('hidden');
-    const chatMessages = document.getElementById('chat-messages');
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function hideTypingIndicator() {
-    const indicator = document.querySelector('.typing-indicator');
-    indicator.classList.add('hidden');
-}
-
 async function sendMessage() {
     const input = document.getElementById('user-input');
     const message = input.value.trim();
     
     if (!message) return;
     
-    // Add user message
     addMessage(message, true);
     input.value = '';
-    input.focus(); // Keep focus on input
+    input.focus();
     
-    // Show typing indicator with animated dots
+    // Show typing indicator
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message bot-message typing';
     typingDiv.innerHTML = `
@@ -187,6 +323,7 @@ async function sendMessage() {
     }
 }
 
+// Configuration update function
 async function updateConfig() {
     const button = document.querySelector('.settings-button');
     const originalText = button.innerHTML;
@@ -199,7 +336,7 @@ async function updateConfig() {
     };
     
     try {
-        await fetch('/update-config', {
+        const response = await fetch('/update-config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -207,10 +344,14 @@ async function updateConfig() {
             body: JSON.stringify(config)
         });
         
-        button.innerHTML = '<i class="fas fa-check"></i> Saved!';
-        setTimeout(() => {
-            button.innerHTML = originalText;
-        }, 2000);
+        if (response.ok) {
+            button.innerHTML = '<i class="fas fa-check"></i> Saved!';
+            setTimeout(() => {
+                button.innerHTML = originalText;
+            }, 2000);
+        } else {
+            throw new Error('Failed to update config');
+        }
     } catch (error) {
         console.error('Error updating config:', error);
         button.innerHTML = '<i class="fas fa-times"></i> Error';
@@ -231,9 +372,8 @@ document.getElementById('similarityThreshold').addEventListener('input', functio
     document.getElementById('thresholdValue').textContent = e.target.value;
 });
 
-// Initialize first chat on page load
-window.onload = function() {
+// Initialize settings and start first chat when the page loads
+window.addEventListener('load', function() {
+    initializeSettings();
     startNewChat();
-};
-
-// Rest of your existing JavaScript... 
+});
