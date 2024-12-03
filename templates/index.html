@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forgetting LLM Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="new-chat">
+                <button onclick="startNewChat()">
+                    <i class="fas fa-plus"></i> New Chat
+                </button>
+            </div>
+            <div class="chat-history" id="chatHistory">
+                <!-- Chat history items will be added here -->
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-content">
+            <div class="top-bar">
+                <div class="app-title">
+                    <i class="fas fa-robot"></i> Forgetting LLM Chat
+                </div>
+                <button class="settings-btn" onclick="toggleSettings()">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+
+            <div class="chat-container">
+                <div id="chat-messages"></div>
+                <div class="typing-indicator hidden">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="input-area">
+                    <input type="text" id="user-input" placeholder="Message Forgetting LLM...">
+                    <button onclick="sendMessage()" class="send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal" id="settingsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-cog"></i> Settings</h3>
+                    <button class="close-btn" onclick="toggleSettings()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting">
+                        <label class="switch-label">
+                            <input type="checkbox" id="checkBeforeLLM" checked>
+                            <span class="switch-custom"></span>
+                            Check sensitivity before LLM
+                        </label>
+                    </div>
+                    <div class="setting">
+                        <label>Similarity Threshold</label>
+                        <div class="slider-container">
+                            <input type="range" id="similarityThreshold" min="0" max="1" step="0.1" value="0.7">
+                            <span id="thresholdValue">0.7</span>
+                        </div>
+                    </div>
+                    <div class="setting">
+                        <label>Model Selection</label>
+                        <select id="modelName" class="model-select">
+                            <option value="llama3.2:latest">Llama 3.2 (Latest)</option>
+                            <option value="llama3.2:3b">Llama 3.2 3B</option>
+                            <option value="llama3.1:latest">Llama 3.1 (Latest)</option>
+                        </select>
+                    </div>
+                    <button onclick="updateConfig()" class="settings-button">
+                        <i class="fas fa-save"></i> Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html> 
