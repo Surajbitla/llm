@@ -377,3 +377,27 @@ window.addEventListener('load', function() {
     initializeSettings();
     startNewChat();
 });
+
+// Add this code near your other event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const textarea = document.getElementById('user-input');
+    
+    function adjustTextareaHeight() {
+        textarea.style.height = 'auto';
+        // Updated to match new max-height from CSS
+        textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    }
+    
+    // Adjust height on input
+    textarea.addEventListener('input', adjustTextareaHeight);
+    
+    // Handle Enter key (Send on Enter, new line on Shift+Enter)
+    textarea.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+            // Reset height after sending
+            textarea.style.height = 'auto';
+        }
+    });
+});
