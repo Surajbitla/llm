@@ -42,6 +42,7 @@ def chat():
     data = request.json
     message = data.get('message', '')
     chat_id = data.get('chat_id', '')
+    chat_history = data.get('chat_history', [])
     
     # Capture debug logs
     debug_logs = []
@@ -54,16 +55,15 @@ def chat():
             'timestamp': timestamp
         }
         debug_logs.append(log_entry)
-        # Also print to server console
         color_map = {
-            'info': '\033[94m',  # Blue
-            'warning': '\033[93m',  # Yellow
-            'error': '\033[91m'  # Red
+            'info': '\033[94m',
+            'warning': '\033[93m',
+            'error': '\033[91m'
         }
         end_color = '\033[0m'
         print(f"{color_map.get(type, '')}{timestamp} [{type.upper()}] {message}{end_color}")
     
-    response = llm.generate_response(message, log_callback=log_callback)
+    response = llm.generate_response(message, chat_history, log_callback=log_callback)
     
     return jsonify({
         'response': response,

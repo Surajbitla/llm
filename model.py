@@ -117,14 +117,25 @@ class ForgettingLLM:
             print(f"Rewritten response: {rewritten_response}")
         return rewritten_response
 
-    def generate_response(self, prompt, log_callback=None):
-        """Generate response with optional logging callback"""
+    def generate_response(self, prompt, chat_history=None, log_callback=None):
+        """Generate response with conversation history and optional logging callback"""
         if log_callback:
             log_callback("=== Generating Response ===", "info")
             log_callback(f"Input prompt: {prompt[:100]}...", "info")
         else:
             print("\n=== Generating Response ===")
             print(f"Input prompt: {prompt[:100]}...")
+        
+        # Format conversation history into context
+        context = ""
+        if chat_history and len(chat_history) > 0:
+            context = "Previous conversation:\n"
+            for msg in chat_history:
+                role = "Human" if msg['isUser'] else "Assistant"
+                context += f"{role}: {msg['content']}\n"
+            context += "\nCurrent conversation:\nHuman: " + prompt
+        else:
+            context = "Human: " + prompt
         
         # First, check if the prompt is directly asking about sensitive entities
         prompt_lower = prompt.lower()
@@ -155,13 +166,19 @@ class ForgettingLLM:
                     print(msg)
                 return "I'm sorry, I cannot provide information about that topic."
         
-        # Generate initial response
+        # Generate response with context
         if log_callback:
-            log_callback("Generating LLM response...", "info")
+            log_callback("Generating LLM response with context...", "info")
         else:
-            print("Generating LLM response...")
+            print("Generating LLM response with context...")
         
-        llm_response = self.ollama_generate(prompt, log_callback)
+        # Add system prompt to maintain consistent behavior
+        system_prompt = """You are a helpful AI assistant. Maintain context from the previous conversation while responding.
+        Keep responses natural and coherent with the conversation flow.
+        Current conversation:"""
+        
+        full_prompt = f"{system_prompt}\n\n{context}\n\nAssistant:"
+        llm_response = self.ollama_generate(full_prompt, log_callback)
         
         if log_callback:
             log_callback(f"Initial response: {llm_response}", "info")

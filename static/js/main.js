@@ -1,6 +1,7 @@
 // Chat history management
 let chats = [];
 let currentChatId = null;
+let chatHistory = {};
 
 function startNewChat() {
     const chatId = Date.now().toString();
@@ -10,6 +11,7 @@ function startNewChat() {
         messages: []
     };
     chats.push(chat);
+    chatHistory[chatId] = [];  // Initialize empty history for new chat
     currentChatId = chatId;
     updateChatHistory();
     clearMessages();
@@ -214,16 +216,16 @@ function clearMessages() {
 }
 
 function loadChat(chatId) {
-    if (currentChatId === chatId) return;
     currentChatId = chatId;
-    const chat = chats.find(c => c.id === chatId);
     clearMessages();
+    
+    // Load chat messages
+    const chat = chats.find(c => c.id === chatId);
     if (chat && chat.messages) {
         chat.messages.forEach(msg => {
             addMessage(msg.content, msg.isUser);
         });
     }
-    updateChatHistory();
 }
 
 function addMessage(message, isUser) {
@@ -286,6 +288,7 @@ async function sendMessage() {
     
     if (!message) return;
     
+    // Add user message
     addMessage(message, true);
     input.value = '';
     input.focus();
@@ -297,9 +300,7 @@ async function sendMessage() {
         <div class="typing-animation">
             <span>Generating response</span>
             <span class="dots">
-                <span>.</span>
-                <span>.</span>
-                <span>.</span>
+                <span>.</span><span>.</span><span>.</span>
             </span>
         </div>
     `;
@@ -316,7 +317,8 @@ async function sendMessage() {
             },
             body: JSON.stringify({ 
                 message,
-                chat_id: currentChatId 
+                chat_id: currentChatId,
+                chat_history: chatHistory[currentChatId] || []
             })
         });
         
@@ -329,13 +331,22 @@ async function sendMessage() {
             });
         }
         
-        // Remove typing indicator with fade out effect
-        typingDiv.style.opacity = '0';
-        setTimeout(() => {
-            typingDiv.remove();
-            // Add the actual response with fade in effect
-            addMessage(data.response, false);
-        }, 300);
+        // Remove typing indicator
+        typingDiv.remove();
+        
+        // Add assistant's response
+        addMessage(data.response, false);
+        
+        // Update chat history
+        if (currentChatId) {
+            if (!chatHistory[currentChatId]) {
+                chatHistory[currentChatId] = [];
+            }
+            chatHistory[currentChatId].push(
+                { content: message, isUser: true },
+                { content: data.response, isUser: false }
+            );
+        }
         
     } catch (error) {
         addTerminalMessage(error.message, 'error');
