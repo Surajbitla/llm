@@ -232,22 +232,34 @@ function addMessage(message, isUser) {
     messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
     
     if (!isUser) {
-        const formattedMessage = message
-            .split('\n\n')
-            .map(paragraph => {
-                if (paragraph.includes('* ')) {
-                    const listItems = paragraph.split('* ').filter(item => item.trim());
-                    return `<ul>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ul>`;
+        // Split message into paragraphs
+        const paragraphs = message.split('\n\n');
+        const formattedParagraphs = paragraphs.map(paragraph => {
+            // Check if paragraph contains numbered list items
+            if (paragraph.match(/^\d+\./m)) {  // Check if any line starts with number and period
+                // Split into lines and filter empty ones
+                const lines = paragraph.split('\n').filter(line => line.trim());
+                // Check if these are actually numbered list items
+                if (lines.every(line => /^\d+\./.test(line.trim()))) {
+                    return `<ol start="${lines[0].match(/^\d+/)[0]}">${
+                        lines.map(line => {
+                            // Extract the text after the number and period
+                            const text = line.replace(/^\d+\.\s*/, '');
+                            return `<li>${text}</li>`;
+                        }).join('')
+                    }</ol>`;
                 }
-                else if (/^\d+\./.test(paragraph)) {
-                    const listItems = paragraph.split(/\d+\.\s/).filter(item => item.trim());
-                    return `<ol>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ol>`;
-                }
-                return `<p>${paragraph}</p>`;
-            })
-            .join('');
+            }
+            // Check if paragraph is a bullet list
+            else if (paragraph.includes('* ')) {
+                const listItems = paragraph.split('* ').filter(item => item.trim());
+                return `<ul>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ul>`;
+            }
+            // Regular paragraph
+            return `<p>${paragraph}</p>`;
+        });
         
-        messageDiv.innerHTML = formattedMessage;
+        messageDiv.innerHTML = formattedParagraphs.join('');
     } else {
         messageDiv.textContent = message;
     }
@@ -255,6 +267,7 @@ function addMessage(message, isUser) {
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
+    // Update chat history
     if (currentChatId) {
         const chat = chats.find(c => c.id === currentChatId);
         if (chat) {
@@ -309,6 +322,13 @@ async function sendMessage() {
         
         const data = await response.json();
         
+        // Add terminal messages if present
+        if (data.debug_logs) {
+            data.debug_logs.forEach(log => {
+                addTerminalMessage(log.message, log.type, log.timestamp);
+            });
+        }
+        
         // Remove typing indicator with fade out effect
         typingDiv.style.opacity = '0';
         setTimeout(() => {
@@ -318,6 +338,7 @@ async function sendMessage() {
         }, 300);
         
     } catch (error) {
+        addTerminalMessage(error.message, 'error');
         typingDiv.remove();
         addMessage('Error: Could not get response', false);
     }
@@ -325,16 +346,18 @@ async function sendMessage() {
 
 // Configuration update function
 async function updateConfig() {
-    const button = document.querySelector('.settings-button');
-    const originalText = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    
+    const retainMode = document.getElementById('retainMode').checked;
+    const checkBeforeLLM = document.getElementById('checkBeforeLLM').checked;
+    const similarityThreshold = parseFloat(document.getElementById('similarityThreshold').value);
+    const modelName = document.getElementById('modelName').value;
+
     const config = {
-        check_before_llm: document.getElementById('checkBeforeLLM').checked,
-        similarity_threshold: parseFloat(document.getElementById('similarityThreshold').value),
-        model_name: document.getElementById('modelName').value
+        retain_mode: retainMode,
+        check_before_llm: checkBeforeLLM,
+        similarity_threshold: similarityThreshold,
+        model_name: modelName
     };
-    
+
     try {
         const response = await fetch('/update-config', {
             method: 'POST',
@@ -345,19 +368,14 @@ async function updateConfig() {
         });
         
         if (response.ok) {
-            button.innerHTML = '<i class="fas fa-check"></i> Saved!';
-            setTimeout(() => {
-                button.innerHTML = originalText;
-            }, 2000);
+            updateSettingsVisibility();
+            showToast('Settings updated successfully', 'success');
         } else {
             throw new Error('Failed to update config');
         }
     } catch (error) {
         console.error('Error updating config:', error);
-        button.innerHTML = '<i class="fas fa-times"></i> Error';
-        setTimeout(() => {
-            button.innerHTML = originalText;
-        }, 2000);
+        showToast('Failed to update settings', 'error');
     }
 }
 
@@ -401,3 +419,108 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// Add to your existing JavaScript
+function updateSettingsVisibility() {
+    const retainMode = document.getElementById('retainMode').checked;
+    const similarityThresholdSetting = document.getElementById('similarityThresholdSetting');
+    
+    if (retainMode) {
+        // In retain mode, only hide threshold, don't affect check before LLM
+        similarityThresholdSetting.style.display = 'none';
+    } else {
+        // In normal mode, show threshold
+        similarityThresholdSetting.style.display = 'block';
+    }
+}
+
+// Add event listeners
+document.getElementById('retainMode').addEventListener('change', updateSettingsVisibility);
+
+// Initialize settings visibility on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Load initial settings from server
+    fetch('/get-config')
+        .then(response => response.json())
+        .then(config => {
+            document.getElementById('retainMode').checked = config.retain_mode;
+            document.getElementById('checkBeforeLLM').checked = config.check_before_llm;
+            document.getElementById('similarityThreshold').value = config.similarity_threshold;
+            document.getElementById('modelName').value = config.model_name;
+            updateSettingsVisibility();
+        });
+});
+
+// Add this to your existing JavaScript
+function initializeSidebarToggle() {
+    const appContainer = document.querySelector('.app-container');
+    const toggleButton = document.getElementById('sidebarToggle');
+    
+    toggleButton.addEventListener('click', () => {
+        appContainer.classList.toggle('sidebar-collapsed');
+        
+        // Store the state in localStorage
+        const isCollapsed = appContainer.classList.contains('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+    });
+    
+    // Restore sidebar state on page load
+    const wasCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    if (wasCollapsed) {
+        appContainer.classList.add('sidebar-collapsed');
+    }
+}
+
+// Add this to your DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', () => {
+    initializeSidebarToggle();
+    // ... your existing initialization code ...
+});
+
+// Terminal handling
+let isTerminalOpen = false;
+
+function toggleTerminal() {
+    const appContainer = document.querySelector('.app-container');
+    isTerminalOpen = !isTerminalOpen;
+    
+    if (isTerminalOpen) {
+        appContainer.classList.add('terminal-active');
+        // Auto-collapse sidebar when terminal opens
+        appContainer.classList.add('sidebar-collapsed');
+    } else {
+        appContainer.classList.remove('terminal-active');
+    }
+    
+    // Store terminal state
+    localStorage.setItem('terminalOpen', isTerminalOpen);
+}
+
+function addTerminalMessage(message, type = 'info', timestamp = null) {
+    const terminal = document.getElementById('terminalContent');
+    const msgElement = document.createElement('div');
+    msgElement.className = `terminal-msg terminal-${type}`;
+    
+    // Format timestamp if provided
+    const timeStr = timestamp ? `[${timestamp}] ` : '';
+    const typeStr = type.toUpperCase();
+    
+    msgElement.innerHTML = `<span class="terminal-timestamp">${timeStr}</span><span class="terminal-type">[${typeStr}]</span> ${message}`;
+    terminal.appendChild(msgElement);
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+// Initialize terminal state on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const wasTerminalOpen = localStorage.getItem('terminalOpen') === 'true';
+    if (wasTerminalOpen) {
+        toggleTerminal();
+    }
+});
+
+function clearTerminal() {
+    const terminal = document.getElementById('terminalContent');
+    terminal.innerHTML = '';
+    // Add a cleared message
+    addTerminalMessage('Terminal cleared', 'info');
+}

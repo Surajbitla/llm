@@ -4,6 +4,7 @@ import subprocess
 from config import ModelConfig
 import os
 import json
+import re
 
 class ForgettingLLM:
     def __init__(self):
@@ -61,7 +62,8 @@ class ForgettingLLM:
                 "stark", "Stark", "STARK",
                 "tony stark", "Tony Stark", "TONY STARK",
                 "tonystark", "TonyStark", "TONYSTARK",
-                "anthony stark", "Anthony Stark", "ANTHONY STARK"
+                "anthony stark", "Anthony Stark", "ANTHONY STARK",
+                "iron", "Iron", "IRON"  # Add base forms
             ]
         elif "spider" in base_name:
             return [
@@ -70,74 +72,102 @@ class ForgettingLLM:
                 "peter", "Peter", "PETER",
                 "parker", "Parker", "PARKER",
                 "peter parker", "Peter Parker", "PETER PARKER",
-                "peterparker", "PeterParker", "PETERPARKER"
+                "peterparker", "PeterParker", "PETERPARKER",
+                "spider", "Spider", "SPIDER"  # Add base forms
             ]
         else:
             print(f"Warning: No predefined entities for {filename}")
             return []
 
-    def rewrite_response(self, text, entities_to_remove):
+    def rewrite_response(self, text, entities_to_remove, log_callback=None):
         """Ask LLM to rewrite the text removing specific entities"""
-        print(f"\nRewriting response to remove entities: {entities_to_remove}")
-        
-        # Build a list of all variations for each entity
-        entities_with_variations = []
-        for entity in entities_to_remove:
-            variations = self.entity_aliases.get(entity, [])
-            entities_with_variations.append(f"{entity} (including variations like: {', '.join(variations[:5])})")
+        if log_callback:
+            log_callback(f"\nRewriting response to remove entities: {entities_to_remove}", "info")
+        else:
+            print(f"\nRewriting response to remove entities: {entities_to_remove}")
         
         instruction = (
             "TASK: Completely remove these characters and all information about them from the text:\n" +
-            "\n".join(f"- {e}" for e in entities_with_variations) + "\n\n" +
+            "\n".join(f"- {e}" for e in entities_to_remove) + "\n\n" +
             "RULES:\n" +
-            "1. Remove ALL mentions, variations, and information about these characters including:\n" +
-            "   - Their names (full names, first names, last names, aliases)\n" +
-            "   - Their actions and roles in the story\n" +
-            "   - Any descriptions or details about them\n" +
-            "   - Any lines or scenes focusing on them\n" +
-            "2. Keep all information about other characters\n" +
-            "3. Keep the same format and structure\n" +
-            "4. Update any numbers or counts\n" +
-            "5. Make sure the text flows naturally without gaps\n\n" +
+            "1. Remove ALL mentions and information about these characters including:\n" +
+            "   - Their names (full names, first names, last names, nicknames, aliases)\n" +
+            "   - Their actions, roles, and any events involving them\n" +
+            "   - Their descriptions, characteristics, or relationships\n" +
+            "   - Any scenes, dialogues, or plot points focusing on them\n" +
+            "   - Any references to their technology, equipment, or abilities\n" +
+            "2. Keep information about other characters only if it doesn't involve the removed characters\n" +
+            "3. Maintain the same format and structure where possible:\n" +
+            "   - Keep numbered lists with proper numbering (1., 2., 3., etc.)\n" +
+            "   - Preserve paragraph breaks with double newlines\n" +
+            "   - Keep bullet points if present\n" +
+            "4. Update any numbers, counts, or lists to reflect the removals\n" +
+            "5. Ensure the text flows naturally and remains coherent\n" +
+            "6. If a section becomes meaningless after removal, remove the entire section\n\n" +
             "TEXT TO REWRITE:\n" +
             f"{text}\n\n" +
-            "REWRITTEN VERSION (exclude all information about the specified characters):"
+            "REWRITTEN VERSION (completely exclude all information about the specified characters):"
         )
         
-        print("Sending instruction to Ollama:", instruction[:100] + "...")
+        rewritten_response = self.ollama_generate(instruction, log_callback)
         
-        rewritten_response = self.ollama_generate(instruction)
-        print(f"Rewritten response: {rewritten_response}")
+        if log_callback:
+            log_callback(f"Rewritten response: {rewritten_response}", "info")
+        else:
+            print(f"Rewritten response: {rewritten_response}")
         return rewritten_response
 
-    def generate_response(self, prompt):
-        print("\n=== Generating Response ===")
-        print(f"Input prompt: {prompt[:100]}...")
+    def generate_response(self, prompt, log_callback=None):
+        """Generate response with optional logging callback"""
+        if log_callback:
+            log_callback("=== Generating Response ===", "info")
+            log_callback(f"Input prompt: {prompt[:100]}...", "info")
+        else:
+            print("\n=== Generating Response ===")
+            print(f"Input prompt: {prompt[:100]}...")
         
         # First, check if the prompt is directly asking about sensitive entities
         prompt_lower = prompt.lower()
         for entity, aliases in self.entity_aliases.items():
             for alias in aliases:
                 if alias.lower() in prompt_lower:
-                    print(f"Prompt directly asks about sensitive entity: {entity}")
-                    return "I apologize, but I cannot provide information about that topic."
-        
-        # Adjust thresholds
-        block_threshold = 0.9  # Only block if it's almost entirely about sensitive content
-        rewrite_threshold = 0.7  # Rewrite if it contains sensitive information
+                    msg = f"Prompt directly asks about sensitive entity: {entity}"
+                    if log_callback:
+                        log_callback(msg, "warning")
+                    else:
+                        print(msg)
+                    if not self.config.retain_mode:
+                        return "I apologize, but I cannot provide information about that topic."
         
         # Check before LLM if enabled
         if self.config.check_before_llm:
-            print("Checking prompt before LLM generation...")
-            is_sensitive, similarity = self.is_sensitive_query(prompt, block_threshold)
-            if is_sensitive:
-                print(f"Prompt blocked (similarity: {similarity:.4f})")
+            if log_callback:
+                log_callback("Checking prompt before LLM generation...", "info")
+            else:
+                print("Checking prompt before LLM generation...")
+            
+            is_sensitive, similarity = self.is_sensitive_query(prompt, self.config.similarity_threshold)
+            if is_sensitive and not self.config.retain_mode:
+                msg = f"Prompt blocked (similarity: {similarity:.4f})"
+                if log_callback:
+                    log_callback(msg, "warning")
+                else:
+                    print(msg)
                 return "I'm sorry, I cannot provide information about that topic."
         
         # Generate initial response
-        print("Generating LLM response...")
-        llm_response = self.ollama_generate(prompt)
-        print(f"Initial response: {llm_response}")
+        if log_callback:
+            log_callback("Generating LLM response...", "info")
+        else:
+            print("Generating LLM response...")
+        
+        llm_response = self.ollama_generate(prompt, log_callback)
+        
+        if log_callback:
+            log_callback(f"Initial response: {llm_response}", "info")
+        else:
+            print(f"Initial response: {llm_response}")
+        
         if llm_response is None:
             return "Error: Could not generate response."
         
@@ -145,41 +175,54 @@ class ForgettingLLM:
         entities_to_remove = set()
         response_lower = llm_response.lower()
         
-        # Count how much of the response is about sensitive entities
-        sensitive_content = False
+        # Track sensitive content per entity
+        entity_contexts = {}
+        
         for entity, aliases in self.entity_aliases.items():
-            # Track if we found any mention of this entity
-            found_mention = False
-            context_count = 0  # Count meaningful context mentions
+            context_count = 0
+            relevant_lines = []
             
             # Check each line for context
             for line in response_lower.split('\n'):
                 if any(alias.lower() in line for alias in aliases):
-                    found_mention = True
                     # Only count as context if it's more than just the name
                     if len(line.split()) > 3:  # If line has more than 3 words
                         context_count += 1
+                        relevant_lines.append(line)
             
-            if found_mention:
+            if context_count > 0:
                 entities_to_remove.add(entity)
-                print(f"Found entity: {entity} with {context_count} contextual mentions")
-                
-                # If there are multiple lines with context about this entity
-                if context_count > 2:  # Adjust this threshold as needed
-                    sensitive_content = True
-                    print(f"Response contains significant information about {entity}")
+                entity_contexts[entity] = {
+                    'count': context_count,
+                    'lines': relevant_lines
+                }
+                if log_callback:
+                    log_callback(f"Found entity: {entity} with {context_count} contextual mentions", "info")
+                else:
+                    print(f"Found entity: {entity} with {context_count} contextual mentions")
         
-        # If the response is primarily about sensitive entities, block it
-        if sensitive_content:
-            print("Response contains too much sensitive information")
-            return "I apologize, but I cannot provide that information."
+        # Handle sensitive content based on mode
+        if entities_to_remove:
+            if self.config.retain_mode:
+                # In retain mode, always try to rewrite
+                if log_callback:
+                    log_callback(f"Found sensitive entities to remove: {entities_to_remove}", "info")
+                else:
+                    print(f"Found sensitive entities to remove: {entities_to_remove}")
+                return self.rewrite_response(llm_response, entities_to_remove, log_callback)
+            else:
+                # In normal mode, block the response
+                msg = "Response contains sensitive information"
+                if log_callback:
+                    log_callback(msg, "warning")
+                else:
+                    print(msg)
+                return "I apologize, but I cannot provide that information as it contains sensitive content."
         
-        # If we found some mentions but not too many, rewrite the response
-        if entities_to_remove and not sensitive_content:
-            print(f"Found sensitive entities to remove: {entities_to_remove}")
-            return self.rewrite_response(llm_response, entities_to_remove)
-        
-        print("No sensitive entities found, returning original response")
+        if log_callback:
+            log_callback("No sensitive entities found, returning original response", "info")
+        else:
+            print("No sensitive entities found, returning original response")
         return llm_response
 
     def add_to_forgetting_set(self, content, filename):
@@ -258,18 +301,35 @@ class ForgettingLLM:
         except Exception as e:
             print(f"Error removing item: {e}")
             return False
-    def ollama_generate(self, prompt):
+    def ollama_generate(self, prompt, log_callback=None):
+        """Generate response using Ollama with optional logging"""
         try:
             import os
+            import re
+            
+            # Function to clean ANSI escape sequences and spinner characters
+            def clean_ansi(text):
+                # Remove ANSI escape sequences
+                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                text = ansi_escape.sub('', text)
+                
+                # Remove spinner characters
+                spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+                for char in spinner_chars:
+                    text = text.replace(char, '')
+                
+                # Clean up extra whitespace
+                text = re.sub(r'\s+', ' ', text)
+                return text.strip()
+            
             if os.name == 'nt':  # Windows
                 from subprocess import Popen, PIPE, CREATE_NO_WINDOW
                 
                 # Clean and escape the prompt
-                # Replace newlines with spaces and escape quotes
                 cleaned_prompt = prompt.replace('\n', ' ').replace('"', '""').replace("'", "''")
                 
-                # Construct PowerShell command with proper escaping
-                powershell_cmd = f'powershell -Command "$prompt = \'{cleaned_prompt}\'; ollama run {self.config.model_name} $prompt"'
+                # Use UTF-8 encoding explicitly
+                powershell_cmd = f'powershell -Command "$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $prompt = \'{cleaned_prompt}\'; ollama run {self.config.model_name} $prompt"'
                 
                 process = Popen(
                     powershell_cmd,
@@ -277,23 +337,32 @@ class ForgettingLLM:
                     stderr=PIPE,
                     shell=True,
                     creationflags=CREATE_NO_WINDOW,
-                    text=True
+                    text=True,
+                    encoding='utf-8'
                 )
                 
                 stdout, stderr = process.communicate()
                 response = stdout
                 
                 if stderr:
-                    print(f"Ollama stderr: {stderr}")
-                
+                    # Clean ANSI sequences from stderr before logging
+                    cleaned_stderr = clean_ansi(stderr)
+                    # Only log if there's actual content after cleaning and it's not just spinner artifacts
+                    if cleaned_stderr.strip() and not cleaned_stderr.strip() in ['', ' ']:
+                        if log_callback:
+                            log_callback(f"Ollama stderr: {cleaned_stderr}", "error")
+                        else:
+                            print(f"Ollama stderr: {cleaned_stderr}")
+            
             else:  # Linux/Mac
                 cmd = ["ollama", "run", self.config.model_name, prompt]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', check=True)
                 response = result.stdout
             
             # Clean up the response
             if response:
-                response = response.strip()
+                # Clean ANSI sequences
+                response = clean_ansi(response.strip())
                 
                 # Remove any potential error messages
                 error_messages = [
@@ -321,5 +390,8 @@ class ForgettingLLM:
             return response or "Error: No response generated"
             
         except Exception as e:
-            print(f"Error generating response with Ollama: {e}")
+            if log_callback:
+                log_callback(f"Error generating response with Ollama: {e}", "error")
+            else:
+                print(f"Error generating response with Ollama: {e}")
             return None

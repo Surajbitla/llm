@@ -1,0 +1,6 @@
+{
+    "retain_mode": true,
+    "check_before_llm": false,
+    "similarity_threshold": 0.7,
+    "model_name": "llama3.2:latest"
+}

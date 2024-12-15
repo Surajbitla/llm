@@ -3,6 +3,7 @@ from model import ForgettingLLM
 import json
 import os
 from werkzeug.utils import secure_filename
+from datetime import datetime
 
 app = Flask(__name__)
 llm = ForgettingLLM()
@@ -42,17 +43,39 @@ def chat():
     message = data.get('message', '')
     chat_id = data.get('chat_id', '')
     
-    response = llm.generate_response(message)
+    # Capture debug logs
+    debug_logs = []
+    
+    def log_callback(message, type='info'):
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        log_entry = {
+            'message': message,
+            'type': type,
+            'timestamp': timestamp
+        }
+        debug_logs.append(log_entry)
+        # Also print to server console
+        color_map = {
+            'info': '\033[94m',  # Blue
+            'warning': '\033[93m',  # Yellow
+            'error': '\033[91m'  # Red
+        }
+        end_color = '\033[0m'
+        print(f"{color_map.get(type, '')}{timestamp} [{type.upper()}] {message}{end_color}")
+    
+    response = llm.generate_response(message, log_callback=log_callback)
     
     return jsonify({
         'response': response,
-        'chat_id': chat_id
+        'chat_id': chat_id,
+        'debug_logs': debug_logs
     })
 
 @app.route('/update-config', methods=['POST'])
 def update_config():
     data = request.json
     llm.config.update_config(
+        retain_mode=data.get('retain_mode'),
         check_before_llm=data.get('check_before_llm'),
         similarity_threshold=data.get('similarity_threshold'),
         model_name=data.get('model_name')
@@ -175,6 +198,15 @@ def load_existing_files():
 
 # Load existing files on startup
 load_existing_files()
+
+@app.route('/get-config', methods=['GET'])
+def get_config():
+    return jsonify({
+        'retain_mode': llm.config.retain_mode,
+        'check_before_llm': llm.config.check_before_llm,
+        'similarity_threshold': llm.config.similarity_threshold,
+        'model_name': llm.config.model_name
+    })
 
 if __name__ == '__main__':
     app.run(debug=True) 
