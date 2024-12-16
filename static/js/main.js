@@ -223,9 +223,11 @@ function clearMessages() {
 }
 
 function loadChat(chatId) {
+    // Remove 'active' class from all chat items
     document.querySelectorAll('.chat-item').forEach(item => {
         item.classList.remove('active');
     });
+    // Add 'active' class to the selected chat item
     const selectedChat = document.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
     if (selectedChat) {
         selectedChat.classList.add('active');
@@ -234,16 +236,16 @@ function loadChat(chatId) {
     currentChatId = chatId;
     clearMessages();
     
-    // Load chat messages
+    // Load chat messages only from the chat's messages array
     const chat = chats.find(c => c.id === chatId);
     if (chat && chat.messages) {
         chat.messages.forEach(msg => {
-            addMessage(msg.content, msg.isUser);
+            addMessage(msg.content, msg.isUser, false); // Added false parameter to prevent re-adding to history
         });
     }
 }
 
-function addMessage(message, isUser) {
+function addMessage(message, isUser, saveToHistory = true) {
     const chatMessages = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
@@ -284,8 +286,8 @@ function addMessage(message, isUser) {
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // Update chat history
-    if (currentChatId) {
+    // Only save to chat history if saveToHistory is true
+    if (saveToHistory && currentChatId) {
         const chat = chats.find(c => c.id === currentChatId);
         if (chat) {
             chat.messages.push({ content: message, isUser });
