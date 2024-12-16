@@ -175,6 +175,9 @@ class ForgettingLLM:
 
     def generate_response(self, prompt, chat_history=None, log_callback=None):
         """Generate response with conversation history and optional logging callback"""
+        if self.config.use_entities:
+            return self.generate_response_for_entities(prompt, chat_history, log_callback)
+        
         if log_callback:
             log_callback("=== Generating Response ===", "info")
             log_callback(f"Input prompt: {prompt[:100]}...", "info")
@@ -500,3 +503,46 @@ class ForgettingLLM:
             else:
                 print(f"Error generating response with Ollama: {e}")
             return "I apologize, but I encountered an error while generating the response."
+
+    def load_entities_from_json(self):
+        """Load entities from entities.json file"""
+        try:
+            entities_file = 'entities.json'
+            if os.path.exists(entities_file):
+                with open(entities_file, 'r') as f:
+                    return json.load(f)['entities']
+            return []
+        except Exception as e:
+            print(f"Error loading entities: {e}")
+            return []
+
+    def format_entities_for_prompt(self, entities):
+        """Format entities list into natural language"""
+        if not entities:
+            return ""
+        
+        if len(entities) == 1:
+            return entities[0]
+        elif len(entities) == 2:
+            return f"{entities[0]} and {entities[1]}"
+        else:
+            return ", ".join(entities[:-1]) + f", and {entities[-1]}"
+
+    def generate_response_for_entities(self, message, chat_history=None, log_callback=None):
+        """Separate method for entity-based processing"""
+        if log_callback:
+            log_callback("Using entities mode for processing", "info")
+        
+        entities = self.load_entities_from_json()
+        if not entities:
+            if log_callback:
+                log_callback("No entities found, using original query", "info")
+            return self.generate_response(message, chat_history, log_callback)
+
+        entities_text = self.format_entities_for_prompt(entities)
+        modified_query = f"{message} (excluding {entities_text})"
+        
+        if log_callback:
+            log_callback(f"Modified query: {modified_query}", "info")
+        
+        return self.ollama_generate(modified_query, log_callback)
