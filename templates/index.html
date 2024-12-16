@@ -110,6 +110,19 @@
                         <div class="setting">
                             <label class="switch-label">
                                 <div class="switch-label-text">
+                                    <input type="checkbox" id="useEntities">
+                                    <span class="switch-custom"></span>
+                                    <span>Use Entities Mode</span>
+                                </div>
+                            </label>
+                            <small class="setting-description">
+                                When enabled, LLM will process queries using only the defined entities, 
+                                ignoring other sensitivity checks and thresholds.
+                            </small>
+                        </div>
+                        <div class="setting">
+                            <label class="switch-label">
+                                <div class="switch-label-text">
                                     <input type="checkbox" id="retainMode">
                                     <span class="switch-custom"></span>
                                     <span>Enable Retain Mode</span>
@@ -221,5 +234,6 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <div id="notification-container"></div>
 </body>
 </html> 

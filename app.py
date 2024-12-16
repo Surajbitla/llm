@@ -85,14 +85,24 @@ def chat():
 
 @app.route('/update-config', methods=['POST'])
 def update_config():
-    data = request.json
-    llm.config.update_config(
-        retain_mode=data.get('retain_mode'),
-        check_before_llm=data.get('check_before_llm'),
-        similarity_threshold=data.get('similarity_threshold'),
-        model_name=data.get('model_name')
-    )
-    return jsonify({'status': 'success'})
+    try:
+        data = request.json
+        llm.config.update_config(
+            retain_mode=data.get('retain_mode'),
+            check_before_llm=data.get('check_before_llm'),
+            similarity_threshold=data.get('similarity_threshold'),
+            model_name=data.get('model_name'),
+            use_entities=data.get('use_entities')
+        )
+        return jsonify({
+            'success': True,
+            'message': 'Configuration updated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
 
 @app.route('/chats', methods=['GET'])
 def get_chats():
@@ -217,7 +227,8 @@ def get_config():
         'retain_mode': llm.config.retain_mode,
         'check_before_llm': llm.config.check_before_llm,
         'similarity_threshold': llm.config.similarity_threshold,
-        'model_name': llm.config.model_name
+        'model_name': llm.config.model_name,
+        'use_entities': llm.config.use_entities
     })
 
 @app.route('/get-entities')
