@@ -83,6 +83,7 @@ function toggleSettings() {
     } else {
         modal.style.display = 'block';
         loadForgettingSet(); // Load forgetting set when opening settings
+        loadEntities(); // Load entities when opening settings
     }
 }
 
@@ -242,14 +243,37 @@ async function deleteItem(index) {
 }
 
 function showNotification(message, type = 'info') {
-    console.log(`${type}: ${message}`);
-    // You can implement a better notification system here
-    if (type === 'error') {
-        alert(`Error: ${message}`);
-    } else if (type === 'success') {
-        // Optional: implement a nicer success notification
-        console.log(`Success: ${message}`);
+    const container = document.getElementById('notification-container');
+    const notification = document.createElement('div');
+    
+    // Set icon based on type
+    let icon;
+    switch(type) {
+        case 'success':
+            icon = 'fa-check-circle';
+            break;
+        case 'error':
+            icon = 'fa-exclamation-circle';
+            break;
+        default:
+            icon = 'fa-info-circle';
     }
+    
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <i class="fas ${icon}"></i>
+        <span>${message}</span>
+    `;
+    
+    container.appendChild(notification);
+    
+    // Remove notification after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'fadeOut 0.3s ease-out forwards';
+        setTimeout(() => {
+            container.removeChild(notification);
+        }, 300);
+    }, 3000);
 }
 
 // Message handling functions
@@ -409,12 +433,14 @@ async function sendMessage() {
 
 // Configuration update function
 async function updateConfig() {
+    const useEntities = document.getElementById('useEntities').checked;
     const retainMode = document.getElementById('retainMode').checked;
     const checkBeforeLLM = document.getElementById('checkBeforeLLM').checked;
     const similarityThreshold = parseFloat(document.getElementById('similarity-threshold').value);
     const modelName = document.getElementById('modelName').value;
 
     const config = {
+        use_entities: useEntities,
         retain_mode: retainMode,
         check_before_llm: checkBeforeLLM,
         similarity_threshold: similarityThreshold,
@@ -430,15 +456,17 @@ async function updateConfig() {
             body: JSON.stringify(config)
         });
         
-        if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Settings saved successfully', 'success');
             updateSettingsVisibility();
-            showToast('Settings updated successfully', 'success');
         } else {
-            throw new Error('Failed to update config');
+            throw new Error(data.error || 'Failed to update config');
         }
     } catch (error) {
         console.error('Error updating config:', error);
-        showToast('Failed to update settings', 'error');
+        showNotification('Failed to save settings: ' + error.message, 'error');
     }
 }
 
@@ -450,9 +478,55 @@ document.getElementById('user-input').addEventListener('keypress', function(e) {
 });
 
 // Initialize settings and start first chat when the page loads
-window.addEventListener('load', function() {
+document.addEventListener('DOMContentLoaded', () => {
+    // Load initial settings from server
+    fetch('/get-config')
+        .then(response => response.json())
+        .then(config => {
+            document.getElementById('retainMode').checked = config.retain_mode;
+            document.getElementById('checkBeforeLLM').checked = config.check_before_llm;
+            document.getElementById('similarity-threshold').value = config.similarity_threshold;
+            document.getElementById('similarity-value').textContent = config.similarity_threshold;
+            document.getElementById('modelName').value = config.model_name;
+            document.getElementById('useEntities').checked = config.use_entities;
+            updateSettingsVisibility();
+        });
+
+    // Initialize sidebar toggle
+    initializeSidebarToggle();
+
+    // Load entities when opening settings modal
+    document.querySelector('[data-tab="entities"]').addEventListener('click', loadEntities);
+
+    // Load entities when settings modal is opened
+    const originalToggleSettings = toggleSettings;
+    toggleSettings = function() {
+        originalToggleSettings();
+        if (document.getElementById('settingsModal').style.display === 'block') {
+            loadEntities();
+        }
+    };
+
+    // Initial entities load
+    loadEntities();
+
+    // Initialize settings
     initializeSettings();
+    
+    // Start first chat (only one call)
     startNewChat();
+
+    // Check if terminal was open
+    const wasTerminalOpen = localStorage.getItem('terminalOpen') === 'true';
+    if (wasTerminalOpen) {
+        toggleTerminal();
+    }
+
+    // Check if sidebar was collapsed
+    const wasCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    if (wasCollapsed) {
+        document.querySelector('.app-container').classList.add('sidebar-collapsed');
+    }
 });
 
 // Add this code near your other event listeners
@@ -481,35 +555,61 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Add to your existing JavaScript
 function updateSettingsVisibility() {
+    const useEntities = document.getElementById('useEntities').checked;
     const retainMode = document.getElementById('retainMode').checked;
-    const similarityThresholdSetting = document.getElementById('similarityThresholdSetting');
     
-    if (retainMode) {
-        // In retain mode, only hide threshold, don't affect check before LLM
-        similarityThresholdSetting.style.display = 'none';
+    // Get all settings except the useEntities setting
+    const settingsToToggle = [
+        {
+            input: document.getElementById('retainMode'),
+            container: document.getElementById('retainMode').closest('.setting')
+        },
+        {
+            input: document.getElementById('checkBeforeLLM'),
+            container: document.getElementById('checkBeforeLLMSetting')
+        },
+        {
+            input: document.getElementById('similarity-threshold'),
+            container: document.getElementById('similarityThresholdSetting')
+        },
+        {
+            input: document.getElementById('modelName'),
+            container: document.getElementById('modelName').closest('.setting')
+        }
+    ];
+
+    if (useEntities) {
+        // Disable all other settings when using entities
+        settingsToToggle.forEach(setting => {
+            if (setting.input && setting.container) {
+                setting.input.disabled = true;
+                setting.container.classList.add('disabled-setting');
+            }
+        });
     } else {
-        // In normal mode, show threshold
-        similarityThresholdSetting.style.display = 'block';
+        // Enable all settings when not using entities
+        settingsToToggle.forEach(setting => {
+            if (setting.input && setting.container) {
+                setting.input.disabled = false;
+                setting.container.classList.remove('disabled-setting');
+            }
+        });
+        
+        // Handle retain mode visibility as before
+        const similarityThresholdSetting = document.getElementById('similarityThresholdSetting');
+        if (retainMode) {
+            // In retain mode, only hide threshold, don't affect check before LLM
+            similarityThresholdSetting.style.display = 'none';
+        } else {
+            // In normal mode, show threshold
+            similarityThresholdSetting.style.display = 'block';
+        }
     }
 }
 
-// Add event listeners
+// Add event listeners for both toggles
+document.getElementById('useEntities').addEventListener('change', updateSettingsVisibility);
 document.getElementById('retainMode').addEventListener('change', updateSettingsVisibility);
-
-// Initialize settings visibility on page load
-document.addEventListener('DOMContentLoaded', () => {
-    // Load initial settings from server
-    fetch('/get-config')
-        .then(response => response.json())
-        .then(config => {
-            document.getElementById('retainMode').checked = config.retain_mode;
-            document.getElementById('checkBeforeLLM').checked = config.check_before_llm;
-            document.getElementById('similarity-threshold').value = config.similarity_threshold;
-            document.getElementById('similarity-value').textContent = config.similarity_threshold;
-            document.getElementById('modelName').value = config.model_name;
-            updateSettingsVisibility();
-        });
-});
 
 // Add this to your existing JavaScript
 function initializeSidebarToggle() {
@@ -530,12 +630,6 @@ function initializeSidebarToggle() {
         appContainer.classList.add('sidebar-collapsed');
     }
 }
-
-// Add this to your DOMContentLoaded event listener
-document.addEventListener('DOMContentLoaded', () => {
-    initializeSidebarToggle();
-    // ... your existing initialization code ...
-});
 
 // Terminal handling
 let isTerminalOpen = false;
@@ -601,3 +695,95 @@ fetch('/get_config')
 similaritySlider.addEventListener('input', function() {
     similarityValue.textContent = this.value;
 });
+
+// Entity Management Functions
+async function loadEntities() {
+    try {
+        const response = await fetch('/get-entities');
+        const data = await response.json();
+        
+        const listContainer = document.getElementById('entitiesList');
+        const emptyState = document.getElementById('entitiesEmptyState');
+        
+        // Clear the list first
+        listContainer.innerHTML = '';
+        
+        // Add empty state back (we'll hide it if we have entities)
+        listContainer.appendChild(emptyState);
+        
+        if (data.entities && data.entities.length > 0) {
+            // Hide empty state if we have entities
+            emptyState.style.display = 'none';
+            
+            data.entities.forEach((entity, index) => {
+                const entityElement = document.createElement('div');
+                entityElement.className = 'entity-item';
+                entityElement.innerHTML = `
+                    <span class="entity-name">${entity}</span>
+                    <button class="entity-delete-btn" onclick="deleteEntity(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `;
+                listContainer.appendChild(entityElement);
+            });
+        } else {
+            emptyState.style.display = 'flex';
+        }
+    } catch (error) {
+        console.error('Error loading entities:', error);
+        showNotification('Error loading entities', 'error');
+    }
+}
+
+async function saveEntity() {
+    const input = document.getElementById('entityInput');
+    const entity = input.value.trim();
+    
+    if (!entity) {
+        showNotification('Please enter an entity name', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/add-entity', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ entity })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            input.value = ''; // Clear input
+            showNotification('Entity added successfully', 'success');
+            loadEntities(); // Reload the list
+        } else {
+            showNotification(result.error || 'Error adding entity', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving entity:', error);
+        showNotification('Error saving entity', 'error');
+    }
+}
+
+async function deleteEntity(index) {
+    if (confirm('Are you sure you want to delete this entity?')) {
+        try {
+            const response = await fetch(`/delete-entity/${index}`, {
+                method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showNotification('Entity deleted successfully', 'success');
+                loadEntities(); // Reload the list
+            } else {
+                showNotification(result.error || 'Error deleting entity', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting entity:', error);
+            showNotification('Error deleting entity', 'error');
+        }
+    }
+}

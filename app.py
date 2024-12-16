@@ -20,6 +20,8 @@ CHATS_FILE = 'chats.json'
 
 ALLOWED_EXTENSIONS = {'txt', 'csv', 'xlsx'}
 
+ENTITIES_FILE = 'entities.json'
+
 def load_chats():
     if os.path.exists(CHATS_FILE):
         with open(CHATS_FILE, 'r') as f:
@@ -32,6 +34,16 @@ def save_chats(chats):
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def load_entities():
+    if os.path.exists(ENTITIES_FILE):
+        with open(ENTITIES_FILE, 'r') as f:
+            return json.load(f)
+    return {'entities': []}
+
+def save_entities(entities):
+    with open(ENTITIES_FILE, 'w') as f:
+        json.dump(entities, f, indent=4)
 
 @app.route('/')
 def home():
@@ -73,14 +85,24 @@ def chat():
 
 @app.route('/update-config', methods=['POST'])
 def update_config():
-    data = request.json
-    llm.config.update_config(
-        retain_mode=data.get('retain_mode'),
-        check_before_llm=data.get('check_before_llm'),
-        similarity_threshold=data.get('similarity_threshold'),
-        model_name=data.get('model_name')
-    )
-    return jsonify({'status': 'success'})
+    try:
+        data = request.json
+        llm.config.update_config(
+            retain_mode=data.get('retain_mode'),
+            check_before_llm=data.get('check_before_llm'),
+            similarity_threshold=data.get('similarity_threshold'),
+            model_name=data.get('model_name'),
+            use_entities=data.get('use_entities')
+        )
+        return jsonify({
+            'success': True,
+            'message': 'Configuration updated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
 
 @app.route('/chats', methods=['GET'])
 def get_chats():
@@ -205,8 +227,37 @@ def get_config():
         'retain_mode': llm.config.retain_mode,
         'check_before_llm': llm.config.check_before_llm,
         'similarity_threshold': llm.config.similarity_threshold,
-        'model_name': llm.config.model_name
+        'model_name': llm.config.model_name,
+        'use_entities': llm.config.use_entities
     })
+
+@app.route('/get-entities')
+def get_entities():
+    return jsonify(load_entities())
+
+@app.route('/add-entity', methods=['POST'])
+def add_entity():
+    data = request.json
+    entity = data.get('entity')
+    if not entity:
+        return jsonify({'success': False, 'error': 'No entity provided'})
+    
+    entities = load_entities()
+    if entity in entities['entities']:
+        return jsonify({'success': False, 'error': 'Entity already exists'})
+    
+    entities['entities'].append(entity)
+    save_entities(entities)
+    return jsonify({'success': True})
+
+@app.route('/delete-entity/<int:index>', methods=['DELETE'])
+def delete_entity(index):
+    entities = load_entities()
+    if 0 <= index < len(entities['entities']):
+        entities['entities'].pop(index)
+        save_entities(entities)
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Invalid entity index'})
 
 if __name__ == '__main__':
     app.run(debug=True) 
