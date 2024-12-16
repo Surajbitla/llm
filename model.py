@@ -73,6 +73,46 @@ class ForgettingLLM:
         
         return max_similarity > threshold, max_similarity
 
+    def validate_aliases(self, entity, aliases):
+        """
+        Validate if the aliases are actually related to the specified entity.
+        
+        Args:
+            entity (str): The primary entity name.
+            aliases (list): List of potential aliases for the entity.
+            
+        Returns:
+            list: List of validated aliases that are relevant to the specified entity.
+        """
+        validated_aliases = []
+
+        for alias in aliases:
+            # Create a structured prompt for LLM to validate the alias
+            validation_prompt = (
+                f"Determine if the following name is a direct alias, nickname, alternate reference, or relationship-based reference for the entity '{entity}'.\n"
+                f"Name to check: '{alias}'\n\n"
+                "Instructions:\n"
+                "1. Answer 'YES' if this name is an alias, nickname, shortened form, commonly used alternate reference, , or relationship-based reference for the entity.\n"
+                "2. Answer 'NO' if this name refers to a different person, character, friend, relative, associate, or entity related to the main entity.\n"
+                "3. Do not provide any explanations, reasoning, or extra context.\n\n"
+                "Answer (YES or NO): "
+            )
+            
+            # Call the LLM to get a YES or NO response
+            response = self.ollama_generate(validation_prompt)
+            
+            # Clean up the response to avoid issues like extra spaces or newlines
+            response_cleaned = response.strip().upper()
+            
+            if response_cleaned == "YES":
+                validated_aliases.append(alias)
+            else:
+                print(f"Alias '{alias}' was rejected for '{entity}'")
+
+        print(f"Validated aliases for '{entity}': {validated_aliases}")
+        return validated_aliases
+
+
     def extract_entities(self, text, filename):
         """
         Dynamically extract entities and generate aliases from a file.
@@ -88,8 +128,8 @@ class ForgettingLLM:
 
         # Step 1: Extract the main entity from the text
         entity_prompt = (
-            f"Analyze the following text and identify the name of the main character, superhero, or key entity discussed. "
-            f"Only provide the entity name, and return it in quotes like this: \"EntityName\".\n\n{text}\n\n"
+            f"Analyze the following text and identify the name of the main character, entity, or key figure discussed. "
+            f"Only provide the entity name, and return it in quotes like this: \"EntityName\".\n\n{text[:1000]}\n\n"
             f"Main entity name:"
         )
         entity_response = self.ollama_generate(entity_prompt)
@@ -101,62 +141,91 @@ class ForgettingLLM:
         # Step 2: Generate all aliases, indirect references, and names for the entity
         alias_prompt = (
             f"List all possible names, aliases, titles, and indirect references for the entity '{entity}' as a strict comma-separated list. "
-            f"Do not include explanations, numbers, bullet points, or aliases for other characters. Strictly include for the provided entity only"
+            f"Do not include explanations, numbers, bullet points, or aliases for other characters. "
             f"Follow this strict format: 'Alias1, Alias2, Alias3, ...'.\n\n"
         )
         alias_response = self.ollama_generate(alias_prompt)
 
-        # Step 3: Extract all aliases (both quoted and unquoted)
-        # This splits the aliases by comma and removes extra whitespace
+        # Step 3: Extract all aliases
         aliases = [alias.strip() for alias in re.split(r',\s*', alias_response) if alias.strip()]
+        
+        # Step 4: Validate aliases to ensure they match the entity
+        validated_aliases = self.validate_aliases(entity, aliases)
 
-        # Remove duplicates and clean the list
-        aliases = list(set(aliases))  # Remove duplicates
-        print(f"Extracted aliases for '{entity}': {aliases[:5]}...")  # Show first 5 aliases
-
-        return [entity] + aliases
+        print(f"Extracted aliases for '{entity}': {validated_aliases[:5]}...")
+        return [entity] + validated_aliases
 
     def rewrite_response(self, text, entities_to_remove, log_callback=None):
         """Ask LLM to rewrite the text removing ALL references to specified characters"""
         if log_callback:
             log_callback(f"\nRewriting response to remove entities: {entities_to_remove}", "info")
-        
+
         instruction = (
             "TASK: Rewrite the text by completely removing specified entities and any references to them.\n\n"
             "Remove these entities and ALL related information:\n" +
             "\n".join(f"- {e} (including names, nicknames, roles, and any direct or indirect mentions)" 
                     for e in entities_to_remove) + "\n\n"
             "RULES:\n"
-            "1. Remove EVERYTHING about these entities:\n"
-            "   - Their names (e.g., John Doe)\n"
-            "   - Their nicknames or aliases (e.g., JD, Johnny, The Specialist)\n"
-            "   - Any references to them (e.g., Doe Enterprises, John’s House, references to their roles or actions)\n"
+            "1. Remove EVERYTHING about these listed entities from the text:\n"
+            "   - Their full names, names, nicknames, and aliases (e.g., John Doe, JD, Johnny, The Specialist)\n"
+            "   - Any references to them (e.g., John’s company, John’s assistant, partner of John)\n"
             "   - Their relationships with other individuals (e.g., John's assistant, partner of John)\n"
-            "   - Their actions, events, and roles (e.g., anything they did, contributed to, or participated in)\n"
-            "2. Keep ALL other entities intact:\n"
-            "   - Their full names and details\n"
-            "   - Their roles, actions, and descriptions\n"
-            "   - Their relationships with non-removed entities\n"
+            "   - Their roles, contributions, and actions (e.g., anything they did, contributed to, or participated in)\n"
+            "   - Mentions of places, companies, teams, or groups associated with them (e.g., Stark Industries, Wayne Enterprises)\n\n"
+            "2. Keep ALL non-restricted entities intact:\n"
+            "   - Do not remove or alter other characters, names, places, organizations, or details unless they are part of the restricted entities list.\n"
+            "   - Preserve the roles, actions, and descriptions of other entities and people that are NOT part of the removal list.\n"
+            "   - Ensure the relationships and connections of non-restricted entities are not changed.\n\n"
             "3. For lists and structured text:\n"
-            "   - Remove entries related to forgotten entities\n"
-            "   - Renumber lists as needed to maintain proper sequence\n"
-            "   - Keep other entries intact and complete\n"
+            "   - Remove entries directly related to restricted entities.\n"
+            "   - Renumber lists as needed to maintain proper sequence.\n"
+            "   - Keep other list entries intact and complete.\n\n"
             "4. DO NOT:\n"
-            "   - Leave any references, mentions, or clues about the removed entities\n"
-            "   - Change information about other entities not listed in the removal list\n"
-            "   - Add any explanatory text or notes about the removed entities\n\n"
-            "EXAMPLE:\n"
-            "Original: 'The project team includes John Doe (the lead developer) and his assistant Jane, plus Michael.'\n"
-            "If removing John Doe: 'The project team includes Michael.'\n\n"
-            "Original: 'The database contains customer information, including Alice's payment history, Bob's orders, and Charlie's reviews.'\n"
-            "If removing Alice and Charlie: 'The database contains customer information, including Bob's orders.'\n\n"
+            "   - Leave any references, mentions, or clues about the restricted entities.\n"
+            "   - Change or remove details about non-restricted entities.\n"
+            "   - Add any explanatory text, placeholders, or notes about the removed entities.\n\n"
+            "IMPORTANT EXAMPLES:\n"
+            "Example 1\n"
+            "User Query: 'Talk about John Doe and his role in the project.'\n"
+            "Entities to Remove: John Doe\n"
+            "REWRITTEN VERSION: 'I do not have information about this.'\n"
+            "-----------------------------------------------\n"
+            "Example 2\n"
+            "User Query: 'Who is John Doe?'\n"
+            "Entities to Remove: John Doe\n"
+            "REWRITTEN VERSION: 'I do not have information about this.'\n"
+            "-----------------------------------------------\n"
+            "Example 3\n"
+            "Original: 'John Doe and Alice worked together at Doe Enterprises, where Alice was his assistant.'\n"
+            "Entities to Remove: John Doe\n"
+            "REWRITTEN VERSION: 'Alice worked at Doe Enterprises.'\n"
+            "-----------------------------------------------\n"
+            "Example 4\n"
+            "Original: 'The team consists of John Doe, Jane Smith, and Michael Taylor. They are known for their combined efforts in developing the new software.'\n"
+            "Entities to Remove: John Doe\n"
+            "REWRITTEN VERSION: 'The team consists of Jane Smith and Michael Taylor. They are known for their combined efforts in developing the new software.'\n"
+            "-----------------------------------------------\n"
             "TEXT TO REWRITE:\n"
             f"{text}\n\n"
             "REWRITTEN VERSION (write ONLY the rewritten text):"
         )
-        
-        rewritten_response = self.ollama_generate(instruction, log_callback)
-        
+
+        # rewritten_response = self.ollama_generate(instruction, log_callback)
+
+        # if "I do not have information about this." in rewritten_response:
+        #     rewritten_response = "I do not have information about this."
+
+        # # **NEW: Remove any introductory text like "Here is the rewritten version of the text with all references to..."**
+        # intro_phrases = [
+        #     "Here is the rewritten version of the text",
+        #     "This is the revised text",
+        #     "Below is the modified text",
+        #     "Here is the new version"
+        # ]
+        for phrase in intro_phrases:
+            if phrase in rewritten_response:
+                rewritten_response = rewritten_response.split(phrase)[-1].strip()
+            
         # Clean up the response
         if "RULES:" in rewritten_response:
             rewritten_response = rewritten_response.split("RULES:")[0].strip()
@@ -208,14 +277,16 @@ class ForgettingLLM:
             return "I apologize, but I cannot provide information about that topic."
         
         # Add system prompt to maintain consistent behavior
-        system_prompt = """You are a helpful AI assistant with extensive knowledge about Marvel movies, especially Avengers: Endgame.
+        system_prompt = """You are a highly knowledgeable and versatile AI assistant with expertise across various domains, topics, and entities.
         When answering questions:
-        1. Stay focused on the specific movie or topic being asked about
-        2. Provide accurate and relevant information
-        3. If a question is about Endgame, focus on that movie specifically
-        4. If a question is about a character, provide information about their role in the relevant movie
-        5. Maintain natural conversation flow while being precise and accurate
-        
+        1. Stay focused on the specific topic, entity, or subject being asked about.
+        2. Provide clear, accurate, and contextually relevant information.
+        3. If a question references a specific context (like a book, movie, person, event, or concept), focus only on that specific context.
+        4. If a question references an entity (like a person, place, organization, or product), provide relevant details specific to that entity.
+        5. Keep the tone natural, conversational, and precise while maintaining factual accuracy.
+        6. Avoid providing irrelevant or unrelated information.
+        7. If a user asks about comparisons (e.g., differences between two entities), ensure the distinctions are clear and objective.
+
         Current conversation:"""
         
         # Format conversation history into context
