@@ -83,6 +83,7 @@ function toggleSettings() {
     } else {
         modal.style.display = 'block';
         loadForgettingSet(); // Load forgetting set when opening settings
+        loadEntities(); // Load entities when opening settings
     }
 }
 
@@ -509,6 +510,24 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('modelName').value = config.model_name;
             updateSettingsVisibility();
         });
+
+    // Initialize sidebar toggle
+    initializeSidebarToggle();
+
+    // Load entities when opening settings modal
+    document.querySelector('[data-tab="entities"]').addEventListener('click', loadEntities);
+
+    // Load entities when settings modal is opened
+    const originalToggleSettings = toggleSettings;
+    toggleSettings = function() {
+        originalToggleSettings();
+        if (document.getElementById('settingsModal').style.display === 'block') {
+            loadEntities();
+        }
+    };
+
+    // Initial entities load
+    loadEntities();
 });
 
 // Add this to your existing JavaScript
@@ -600,4 +619,104 @@ fetch('/get_config')
 // Update the display value when slider moves
 similaritySlider.addEventListener('input', function() {
     similarityValue.textContent = this.value;
+});
+
+// Entity Management Functions
+async function loadEntities() {
+    try {
+        const response = await fetch('/get-entities');
+        const data = await response.json();
+        
+        const listContainer = document.getElementById('entitiesList');
+        const emptyState = document.getElementById('entitiesEmptyState');
+        
+        // Clear the list first
+        listContainer.innerHTML = '';
+        
+        // Add empty state back (we'll hide it if we have entities)
+        listContainer.appendChild(emptyState);
+        
+        if (data.entities && data.entities.length > 0) {
+            // Hide empty state if we have entities
+            emptyState.style.display = 'none';
+            
+            data.entities.forEach((entity, index) => {
+                const entityElement = document.createElement('div');
+                entityElement.className = 'entity-item';
+                entityElement.innerHTML = `
+                    <span class="entity-name">${entity}</span>
+                    <button class="entity-delete-btn" onclick="deleteEntity(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `;
+                listContainer.appendChild(entityElement);
+            });
+        } else {
+            emptyState.style.display = 'flex';
+        }
+    } catch (error) {
+        console.error('Error loading entities:', error);
+        showNotification('Error loading entities', 'error');
+    }
+}
+
+async function saveEntity() {
+    const input = document.getElementById('entityInput');
+    const entity = input.value.trim();
+    
+    if (!entity) {
+        showNotification('Please enter an entity name', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/add-entity', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ entity })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            input.value = ''; // Clear input
+            showNotification('Entity added successfully', 'success');
+            loadEntities(); // Reload the list
+        } else {
+            showNotification(result.error || 'Error adding entity', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving entity:', error);
+        showNotification('Error saving entity', 'error');
+    }
+}
+
+async function deleteEntity(index) {
+    if (confirm('Are you sure you want to delete this entity?')) {
+        try {
+            const response = await fetch(`/delete-entity/${index}`, {
+                method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showNotification('Entity deleted successfully', 'success');
+                loadEntities(); // Reload the list
+            } else {
+                showNotification(result.error || 'Error deleting entity', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting entity:', error);
+            showNotification('Error deleting entity', 'error');
+        }
+    }
+}
+
+// Add this to your existing initialization code
+document.addEventListener('DOMContentLoaded', () => {
+    // ... existing code ...
+    
+    // Load entities when opening settings
+    document.querySelector('[data-tab="entities"]').addEventListener('click', loadEntities);
 });

@@ -89,6 +89,10 @@
                         <i class="fas fa-brain"></i>
                         <span>Forgetting Set</span>
                     </div>
+                    <div class="settings-nav-item" data-tab="entities">
+                        <i class="fas fa-database"></i>
+                        <span>Entities</span>
+                    </div>
                 </div>
 
                 <!-- Settings Content -->
@@ -181,6 +185,34 @@
                                     <p>No files uploaded yet</p>
                                 </div>
                                 <!-- Files will be added here dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Entities Tab -->
+                    <div class="settings-tab" id="entities">
+                        <h3><i class="fas fa-database"></i> Entities Management</h3>
+                        
+                        <!-- Entity Input Section -->
+                        <div class="entity-input-section">
+                            <div class="entity-input-container">
+                                <input type="text" id="entityInput" placeholder="Enter entity name (e.g., Iron Man)">
+                                <button onclick="saveEntity()" class="entity-save-btn">
+                                    <i class="fas fa-save"></i> Save Entity
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Entities List -->
+                        <div class="entities-list-container">
+                            <h4>Saved Entities</h4>
+                            <div class="entities-list" id="entitiesList">
+                                <!-- Empty state message -->
+                                <div class="empty-state" id="entitiesEmptyState">
+                                    <i class="fas fa-cube"></i>
+                                    <p>No entities added yet</p>
+                                </div>
+                                <!-- Entities will be added here dynamically -->
                             </div>
                         </div>
                     </div>
