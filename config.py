@@ -8,18 +8,25 @@ class ModelConfig:
 
     def load_config(self):
         default_config = {
-            "retain_mode": False,  # New setting for retain mode
-            "check_before_llm": False,  # Default to unchecked
-            "similarity_threshold": 0.7,
-            "model_name": "llama3.2"
+            "retain_mode": False,
+            "check_before_llm": False,
+            "similarity_threshold": 0.85,
+            "model_name": "llama3.2:latest"
         }
 
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
                     saved_config = json.load(f)
-                    # Update default config with saved values
-                    default_config.update(saved_config)
+                    # Only update values that exist in saved config
+                    for key in default_config:
+                        if key in saved_config:
+                            if key == "similarity_threshold":
+                                # Ensure threshold is float with 2 decimal places
+                                default_config[key] = round(float(saved_config[key]), 2)
+                            else:
+                                default_config[key] = saved_config[key]
+                    print(f"Loaded config with threshold: {default_config['similarity_threshold']:.2f}")
         except Exception as e:
             print(f"Error loading config: {e}")
 
@@ -34,12 +41,13 @@ class ModelConfig:
         config_data = {
             "retain_mode": self.retain_mode,
             "check_before_llm": self.check_before_llm,
-            "similarity_threshold": self.similarity_threshold,
+            "similarity_threshold": float(self.similarity_threshold),
             "model_name": self.model_name
         }
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(config_data, f, indent=4)
+                print(f"Saved config with threshold: {self.similarity_threshold}")
         except Exception as e:
             print(f"Error saving config: {e}")
 

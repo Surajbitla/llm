@@ -31,24 +31,46 @@ class ForgettingLLM:
             return None
 
     def is_sensitive_query(self, input_text, threshold=0.7):
-        """Check if input text is sensitive, with different thresholds"""
+        """Check if input text contains sensitive information about forgotten characters"""
         if not self.forgetting_set or self.forgetting_embeddings is None:
-            print("No forgetting set or embeddings available")
             return False, 0.0
+
+        # Check if text contains any forgotten character names
+        contains_forgotten = False
+        for entity, aliases in self.entity_aliases.items():
+            if any(alias.lower() in input_text.lower() for alias in aliases):
+                contains_forgotten = True
+                break
         
+        if not contains_forgotten:
+            return False, 0.0
+
+        # Check if it's just a character list or contains detailed information
+        detail_indicators = [
+            'created', 'invented', 'built', 'designed', 'developed',
+            'founded', 'owned', 'established', 'technology', 'suit',
+            'powers', 'abilities', 'origin', 'story', 'history',
+            'background', 'relationship', 'personal', 'invented',
+            'created', 'developed', 'industries'
+        ]
+
+        # If it's just listing characters (no detailed info), return low similarity
+        if not any(indicator in input_text.lower() for indicator in detail_indicators):
+            return False, 0.3  # Return low similarity score for simple mentions
+
+        # Calculate similarity for text with detailed information
         input_embedding = self.get_embedding(input_text)
         if input_embedding is None:
             return False, 0.0
-        
-        # Calculate cosine similarity
+
         similarities = []
-        for i, emb in enumerate(self.forgetting_embeddings):
+        for emb in self.forgetting_embeddings:
             similarity = torch.cosine_similarity(input_embedding, emb, dim=0)
             similarities.append(similarity.item())
-            print(f"Similarity with statement {i}: {similarity.item():.4f}")
-        
+
         max_similarity = max(similarities)
-        print(f"Maximum similarity score: {max_similarity:.4f} (threshold: {threshold})")
+        print(f"Maximum similarity score: {max_similarity:.4f}")
+        
         return max_similarity > threshold, max_similarity
 
     def extract_entities(self, text, filename):
@@ -228,6 +250,18 @@ class ForgettingLLM:
         else:
             print(f"Initial response: {llm_response}")
         
+        # Add sensitivity check for non-retain mode
+        if not self.config.retain_mode:
+            is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
+            if is_sensitive:
+                msg = f"Response blocked due to sensitivity score: {similarity:.4f} > {self.config.similarity_threshold}"
+                if log_callback:
+                    log_callback(msg, "warning")
+                else:
+                    print(msg)
+                return "I apologize, but I cannot provide that information as it contains sensitive content."
+        
+        # Continue with existing code for retain mode
         if llm_response is None:
             return "Error: Could not generate response."
         
@@ -245,14 +279,10 @@ class ForgettingLLM:
             # Split into sentences for better context
             sentences = response_lower.split('.')
             for sentence in sentences:
-                # Check if sentence contains ANY alias of the entity
-                has_entity = any(alias.lower() in sentence.lower() for alias in aliases)
-                if has_entity:
-                    # Only count if it's meaningful context
-                    words = sentence.split()
-                    if len(words) > 3:  # More than 3 words
-                        context_count += 1
-                        relevant_lines.append(sentence)
+                # Check if sentence contains entity mention
+                if any(alias.lower() in sentence for alias in aliases):
+                    context_count += 1
+                    relevant_lines.append(sentence)
             
             if context_count > 0:
                 entities_to_remove.add(entity)
@@ -274,12 +304,15 @@ class ForgettingLLM:
                     print(f"Removing information about: {entities_to_remove}")
                 return self.rewrite_response(llm_response, entities_to_remove, log_callback)
             else:
-                msg = "Response contains sensitive information"
-                if log_callback:
-                    log_callback(msg, "warning")
-                else:
-                    print(msg)
-                return "I apologize, but I cannot provide that information as it contains sensitive content."
+                # Only calculate similarity once
+                is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
+                if is_sensitive:
+                    msg = f"Response blocked due to sensitivity score: {similarity:.4f} > {self.config.similarity_threshold}"
+                    if log_callback:
+                        log_callback(msg, "warning")
+                    else:
+                        print(msg)
+                    return "I apologize, but I cannot provide that information as it contains sensitive content."
         
         return llm_response
 
