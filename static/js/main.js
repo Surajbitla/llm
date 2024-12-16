@@ -26,18 +26,53 @@ function updateChatHistory() {
         chatItem.setAttribute('data-chat-id', chat.id);
         chatItem.className = `chat-item ${chat.id === currentChatId ? 'active' : ''}`;
         chatItem.innerHTML = `
-            <i class="fas fa-comment"></i>
-            <span>${chat.title}</span>
+            <div class="chat-item-content">
+                <i class="fas fa-comment"></i>
+                <span>${chat.title}</span>
+            </div>
+            <button class="chat-delete-btn" title="Delete chat">
+                <i class="fas fa-trash"></i>
+            </button>
         `;
-        chatItem.onclick = () => {
+        
+        // Add click handler for the chat item (excluding delete button)
+        chatItem.querySelector('.chat-item-content').onclick = () => {
             document.querySelectorAll('.chat-item').forEach(item => {
                 item.classList.remove('active');
             });
             chatItem.classList.add('active');
             loadChat(chat.id);
         };
+
+        // Add click handler for delete button
+        chatItem.querySelector('.chat-delete-btn').onclick = (e) => {
+            e.stopPropagation(); // Prevent chat selection when clicking delete
+            deleteChat(chat.id);
+        };
+        
         chatHistory.appendChild(chatItem);
     });
+}
+
+// Add the delete chat function
+function deleteChat(chatId) {
+    if (confirm('Are you sure you want to delete this chat?')) {
+        // Remove chat from arrays
+        chats = chats.filter(chat => chat.id !== chatId);
+        delete chatHistory[chatId];
+        
+        // If we're deleting the current chat, switch to a new one
+        if (chatId === currentChatId) {
+            if (chats.length > 0) {
+                loadChat(chats[0].id);
+            } else {
+                startNewChat();
+            }
+        }
+        
+        // Update the UI
+        updateChatHistory();
+    }
 }
 
 // Settings Modal Management

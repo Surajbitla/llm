@@ -83,9 +83,36 @@ body {
     transition: var(--transition);
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
     color: var(--text-color);
     font-size: 0.9rem;
+}
+
+.chat-item-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.chat-delete-btn {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.chat-item:hover .chat-delete-btn {
+    opacity: 1;
+}
+
+.chat-delete-btn:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
 }
 
 .chat-item:hover {
