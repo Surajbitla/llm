@@ -62,8 +62,10 @@ class ForgettingLLM:
                 "stark", "Stark", "STARK",
                 "tony stark", "Tony Stark", "TONY STARK",
                 "tonystark", "TonyStark", "TONYSTARK",
-                "anthony stark", "Anthony Stark", "ANTHONY STARK",
-                "iron", "Iron", "IRON"  # Add base forms
+                "iron legion", "Iron Legion",
+                "stark tech", "Stark Tech",
+                "stark industries", "Stark Industries",
+                "jarvis", "friday", "mark", "arc reactor"
             ]
         elif "spider" in base_name:
             return [
@@ -72,49 +74,74 @@ class ForgettingLLM:
                 "peter", "Peter", "PETER",
                 "parker", "Parker", "PARKER",
                 "peter parker", "Peter Parker", "PETER PARKER",
-                "peterparker", "PeterParker", "PETERPARKER",
-                "spider", "Spider", "SPIDER"  # Add base forms
+                "web shooter", "web-shooter",
+                "spider sense", "spider-sense",
+                "friendly neighborhood"
+            ]
+        elif "hulk" in base_name:
+            return [
+                "hulk", "Hulk", "HULK",
+                "bruce", "Bruce", "BRUCE",
+                "banner", "Banner", "BANNER",
+                "bruce banner", "Bruce Banner", "BRUCE BANNER"
             ]
         else:
             print(f"Warning: No predefined entities for {filename}")
             return []
 
     def rewrite_response(self, text, entities_to_remove, log_callback=None):
-        """Ask LLM to rewrite the text removing specific entities"""
+        """Ask LLM to rewrite the text removing ALL references to specified characters"""
         if log_callback:
             log_callback(f"\nRewriting response to remove entities: {entities_to_remove}", "info")
-        else:
-            print(f"\nRewriting response to remove entities: {entities_to_remove}")
         
         instruction = (
-            "TASK: Completely remove these characters and all information about them from the text:\n" +
-            "\n".join(f"- {e}" for e in entities_to_remove) + "\n\n" +
-            "RULES:\n" +
-            "1. Remove ALL mentions and information about these characters including:\n" +
-            "   - Their names (full names, first names, last names, nicknames, aliases)\n" +
-            "   - Their actions, roles, and any events involving them\n" +
-            "   - Their descriptions, characteristics, or relationships\n" +
-            "   - Any scenes, dialogues, or plot points focusing on them\n" +
-            "   - Any references to their technology, equipment, or abilities\n" +
-            "2. Keep information about other characters only if it doesn't involve the removed characters\n" +
-            "3. Maintain the same format and structure where possible:\n" +
-            "   - Keep numbered lists with proper numbering (1., 2., 3., etc.)\n" +
-            "   - Preserve paragraph breaks with double newlines\n" +
-            "   - Keep bullet points if present\n" +
-            "4. Update any numbers, counts, or lists to reflect the removals\n" +
-            "5. Ensure the text flows naturally and remains coherent\n" +
-            "6. If a section becomes meaningless after removal, remove the entire section\n\n" +
-            "TEXT TO REWRITE:\n" +
-            f"{text}\n\n" +
-            "REWRITTEN VERSION (completely exclude all information about the specified characters):"
+            "TASK: Rewrite the text by completely removing specified characters and any references to them.\n\n"
+            "Remove these characters and ALL related information:\n" +
+            "\n".join(f"- {e} (including superhero name, real name, and any mentions of them)" 
+                     for e in entities_to_remove) + "\n\n"
+            "RULES:\n"
+            "1. Remove EVERYTHING about these characters:\n"
+            "   - Their superhero names (e.g., Iron Man)\n"
+            "   - Their real names (e.g., Tony Stark)\n"
+            "   - Any references to them (e.g., Stark Industries, Stark Tower)\n"
+            "   - Their relationships (e.g., Stark's assistant)\n"
+            "   - Their actions and roles\n"
+            "2. Keep ALL other characters intact:\n"
+            "   - Their full names and details\n"
+            "   - Their roles and descriptions\n"
+            "   - Their relationships with non-removed characters\n"
+            "3. For lists and structure:\n"
+            "   - Remove entries about forgotten characters\n"
+            "   - Renumber lists as needed\n"
+            "   - Keep other entries complete\n"
+            "4. DO NOT:\n"
+            "   - Leave any references to removed characters\n"
+            "   - Change information about other characters\n"
+            "   - Add explanatory text\n\n"
+            "EXAMPLE:\n"
+            "Original: 'The team includes Iron Man (Tony Stark) and his assistant Pepper, plus Captain America.'\n"
+            "If removing Iron Man: 'The team includes Captain America.'\n\n"
+            "TEXT TO REWRITE:\n"
+            f"{text}\n\n"
+            "REWRITTEN VERSION (write ONLY the rewritten text):"
         )
         
         rewritten_response = self.ollama_generate(instruction, log_callback)
         
+        # Clean up the response
+        if "RULES:" in rewritten_response:
+            rewritten_response = rewritten_response.split("RULES:")[0].strip()
+        if "TEXT TO REWRITE:" in rewritten_response:
+            rewritten_response = rewritten_response.split("TEXT TO REWRITE:")[0].strip()
+        if "Note:" in rewritten_response:
+            rewritten_response = rewritten_response.split("Note:")[0].strip()
+        
+        # Log the cleaned rewritten response
         if log_callback:
             log_callback(f"Rewritten response: {rewritten_response}", "info")
         else:
             print(f"Rewritten response: {rewritten_response}")
+        
         return rewritten_response
 
     def generate_response(self, prompt, chat_history=None, log_callback=None):
@@ -125,6 +152,39 @@ class ForgettingLLM:
         else:
             print("\n=== Generating Response ===")
             print(f"Input prompt: {prompt[:100]}...")
+        
+        # First, check if the prompt is directly asking about sensitive entities
+        prompt_lower = prompt.lower()
+        sensitive_entities = set()
+        
+        for entity, aliases in self.entity_aliases.items():
+            if any(alias.lower() in prompt_lower for alias in aliases):
+                sensitive_entities.add(entity)
+                msg = f"Prompt directly asks about sensitive entity: {entity}"
+                if log_callback:
+                    log_callback(msg, "warning")
+                else:
+                    print(msg)
+        
+        # If directly asking about a sensitive entity, block immediately
+        if sensitive_entities and any(
+            term in prompt_lower for term in [
+                "who is", "what is", "tell me about", "describe",
+                "who are", "what are", "explain"
+            ]
+        ):
+            return "I apologize, but I cannot provide information about that topic."
+        
+        # Add system prompt to maintain consistent behavior
+        system_prompt = """You are a helpful AI assistant with extensive knowledge about Marvel movies, especially Avengers: Endgame.
+        When answering questions:
+        1. Stay focused on the specific movie or topic being asked about
+        2. Provide accurate and relevant information
+        3. If a question is about Endgame, focus on that movie specifically
+        4. If a question is about a character, provide information about their role in the relevant movie
+        5. Maintain natural conversation flow while being precise and accurate
+        
+        Current conversation:"""
         
         # Format conversation history into context
         context = ""
@@ -137,18 +197,7 @@ class ForgettingLLM:
         else:
             context = "Human: " + prompt
         
-        # First, check if the prompt is directly asking about sensitive entities
-        prompt_lower = prompt.lower()
-        for entity, aliases in self.entity_aliases.items():
-            for alias in aliases:
-                if alias.lower() in prompt_lower:
-                    msg = f"Prompt directly asks about sensitive entity: {entity}"
-                    if log_callback:
-                        log_callback(msg, "warning")
-                    else:
-                        print(msg)
-                    if not self.config.retain_mode:
-                        return "I apologize, but I cannot provide information about that topic."
+        full_prompt = f"{system_prompt}\n\n{context}\n\nAssistant:"
         
         # Check before LLM if enabled
         if self.config.check_before_llm:
@@ -172,12 +221,6 @@ class ForgettingLLM:
         else:
             print("Generating LLM response with context...")
         
-        # Add system prompt to maintain consistent behavior
-        system_prompt = """You are a helpful AI assistant. Maintain context from the previous conversation while responding.
-        Keep responses natural and coherent with the conversation flow.
-        Current conversation:"""
-        
-        full_prompt = f"{system_prompt}\n\n{context}\n\nAssistant:"
         llm_response = self.ollama_generate(full_prompt, log_callback)
         
         if log_callback:
@@ -192,20 +235,24 @@ class ForgettingLLM:
         entities_to_remove = set()
         response_lower = llm_response.lower()
         
-        # Track sensitive content per entity
+        # Track sensitive content per entity with more context
         entity_contexts = {}
         
         for entity, aliases in self.entity_aliases.items():
             context_count = 0
             relevant_lines = []
             
-            # Check each line for context
-            for line in response_lower.split('\n'):
-                if any(alias.lower() in line for alias in aliases):
-                    # Only count as context if it's more than just the name
-                    if len(line.split()) > 3:  # If line has more than 3 words
+            # Split into sentences for better context
+            sentences = response_lower.split('.')
+            for sentence in sentences:
+                # Check if sentence contains ANY alias of the entity
+                has_entity = any(alias.lower() in sentence.lower() for alias in aliases)
+                if has_entity:
+                    # Only count if it's meaningful context
+                    words = sentence.split()
+                    if len(words) > 3:  # More than 3 words
                         context_count += 1
-                        relevant_lines.append(line)
+                        relevant_lines.append(sentence)
             
             if context_count > 0:
                 entities_to_remove.add(entity)
@@ -221,14 +268,12 @@ class ForgettingLLM:
         # Handle sensitive content based on mode
         if entities_to_remove:
             if self.config.retain_mode:
-                # In retain mode, always try to rewrite
                 if log_callback:
-                    log_callback(f"Found sensitive entities to remove: {entities_to_remove}", "info")
+                    log_callback(f"Removing information about: {entities_to_remove}", "info")
                 else:
-                    print(f"Found sensitive entities to remove: {entities_to_remove}")
+                    print(f"Removing information about: {entities_to_remove}")
                 return self.rewrite_response(llm_response, entities_to_remove, log_callback)
             else:
-                # In normal mode, block the response
                 msg = "Response contains sensitive information"
                 if log_callback:
                     log_callback(msg, "warning")
@@ -236,10 +281,6 @@ class ForgettingLLM:
                     print(msg)
                 return "I apologize, but I cannot provide that information as it contains sensitive content."
         
-        if log_callback:
-            log_callback("No sensitive entities found, returning original response", "info")
-        else:
-            print("No sensitive entities found, returning original response")
         return llm_response
 
     def add_to_forgetting_set(self, content, filename):
@@ -319,96 +360,99 @@ class ForgettingLLM:
             print(f"Error removing item: {e}")
             return False
     def ollama_generate(self, prompt, log_callback=None):
-        """Generate response using Ollama with optional logging"""
         try:
             import os
             import re
             
             # Function to clean ANSI escape sequences and spinner characters
             def clean_ansi(text):
-                # Remove ANSI escape sequences
                 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
                 text = ansi_escape.sub('', text)
-                
-                # Remove spinner characters
                 spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
                 for char in spinner_chars:
                     text = text.replace(char, '')
-                
-                # Clean up extra whitespace
                 text = re.sub(r'\s+', ' ', text)
                 return text.strip()
             
             if os.name == 'nt':  # Windows
                 from subprocess import Popen, PIPE, CREATE_NO_WINDOW
                 
-                # Clean and escape the prompt
-                cleaned_prompt = prompt.replace('\n', ' ').replace('"', '""').replace("'", "''")
+                # Write prompt to temporary file to handle long prompts
+                temp_file = 'temp_prompt.txt'
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    f.write(prompt)
                 
-                # Use UTF-8 encoding explicitly
-                powershell_cmd = f'powershell -Command "$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $prompt = \'{cleaned_prompt}\'; ollama run {self.config.model_name} $prompt"'
+                # Use file input instead of command line
+                powershell_cmd = f'powershell -Command "$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content temp_prompt.txt | ollama run {self.config.model_name}"'
                 
-                process = Popen(
-                    powershell_cmd,
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    shell=True,
-                    creationflags=CREATE_NO_WINDOW,
+                try:
+                    process = Popen(
+                        powershell_cmd,
+                        stdout=PIPE,
+                        stderr=PIPE,
+                        shell=True,
+                        creationflags=CREATE_NO_WINDOW,
+                        text=True,
+                        encoding='utf-8'
+                    )
+                    
+                    stdout, stderr = process.communicate()
+                    response = stdout
+                    
+                    if stderr:
+                        cleaned_stderr = clean_ansi(stderr)
+                        if cleaned_stderr.strip() and not cleaned_stderr.strip() in ['', ' ']:
+                            if log_callback:
+                                log_callback(f"Ollama stderr: {cleaned_stderr}", "error")
+                            else:
+                                print(f"Ollama stderr: {cleaned_stderr}")
+                finally:
+                    # Clean up temp file
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+            
+            else:  # Linux/Mac
+                # For Linux/Mac, use pipe to handle long prompts
+                process = subprocess.Popen(
+                    ["ollama", "run", self.config.model_name],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     encoding='utf-8'
                 )
-                
-                stdout, stderr = process.communicate()
-                response = stdout
-                
-                if stderr:
-                    # Clean ANSI sequences from stderr before logging
-                    cleaned_stderr = clean_ansi(stderr)
-                    # Only log if there's actual content after cleaning and it's not just spinner artifacts
-                    if cleaned_stderr.strip() and not cleaned_stderr.strip() in ['', ' ']:
-                        if log_callback:
-                            log_callback(f"Ollama stderr: {cleaned_stderr}", "error")
-                        else:
-                            print(f"Ollama stderr: {cleaned_stderr}")
-            
-            else:  # Linux/Mac
-                cmd = ["ollama", "run", self.config.model_name, prompt]
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', check=True)
-                response = result.stdout
+                response, stderr = process.communicate(input=prompt)
             
             # Clean up the response
             if response:
-                # Clean ANSI sequences
                 response = clean_ansi(response.strip())
                 
                 # Remove any potential error messages
                 error_messages = [
-                    "failed to get console mode for stdout: The handle is invalid.",
-                    "failed to get console mode for stderr: The handle is invalid.",
+                    "failed to get console mode for stdout",
+                    "failed to get console mode for stderr",
                     "CategoryInfo",
                     "FullyQualifiedErrorId"
                 ]
                 for error in error_messages:
                     response = response.replace(error, "").strip()
                 
-                # Remove PowerShell artifacts and clean up lines
+                # Format paragraphs with proper spacing
                 lines = [
                     line.strip() for line in response.split('\n')
                     if line.strip() and
                     not line.startswith("+") and
                     not "CategoryInfo" in line and
-                    not "FullyQualifiedErrorId" in line and
-                    not "failed to get console mode" in line
+                    not "FullyQualifiedErrorId" in line
                 ]
                 
-                # Format paragraphs with proper spacing
                 response = '\n\n'.join(lines)
             
-            return response or "Error: No response generated"
+            return response or "I apologize, but I couldn't generate a proper response."
             
         except Exception as e:
             if log_callback:
                 log_callback(f"Error generating response with Ollama: {e}", "error")
             else:
                 print(f"Error generating response with Ollama: {e}")
-            return None
+            return "I apologize, but I encountered an error while generating the response."
