@@ -74,42 +74,47 @@ class ForgettingLLM:
         return max_similarity > threshold, max_similarity
 
     def extract_entities(self, text, filename):
-        """Return predefined entities based on filename"""
-        base_name = os.path.splitext(filename)[0].lower()
+        """
+        Dynamically extract entities and generate aliases from a file.
         
-        if "iron" in base_name:
-            return [
-                "iron man", "ironman", "Iron Man", "IronMan",
-                "tony", "Tony", "TONY",
-                "stark", "Stark", "STARK",
-                "tony stark", "Tony Stark", "TONY STARK",
-                "tonystark", "TonyStark", "TONYSTARK",
-                "iron legion", "Iron Legion",
-                "stark tech", "Stark Tech",
-                "stark industries", "Stark Industries",
-                "jarvis", "friday", "mark", "arc reactor"
-            ]
-        elif "spider" in base_name:
-            return [
-                "spider man", "spiderman", "Spider Man", "SpiderMan",
-                "spider-man", "Spider-Man", "SPIDER-MAN",
-                "peter", "Peter", "PETER",
-                "parker", "Parker", "PARKER",
-                "peter parker", "Peter Parker", "PETER PARKER",
-                "web shooter", "web-shooter",
-                "spider sense", "spider-sense",
-                "friendly neighborhood"
-            ]
-        elif "hulk" in base_name:
-            return [
-                "hulk", "Hulk", "HULK",
-                "bruce", "Bruce", "BRUCE",
-                "banner", "Banner", "BANNER",
-                "bruce banner", "Bruce Banner", "BRUCE BANNER"
-            ]
-        else:
-            print(f"Warning: No predefined entities for {filename}")
-            return []
+        Args:
+            text (str): Text content of the file.
+            filename (str): Name of the file.
+            
+        Returns:
+            list: List of entity names and aliases.
+        """
+        base_name = os.path.splitext(filename)[0].lower()
+
+        # Step 1: Extract the main entity from the text
+        entity_prompt = (
+            f"Analyze the following text and identify the name of the main character, superhero, or key entity discussed. "
+            f"Only provide the entity name, and return it in quotes like this: \"EntityName\".\n\n{text}\n\n"
+            f"Main entity name:"
+        )
+        entity_response = self.ollama_generate(entity_prompt)
+        
+        # Extract the entity name from double quotes
+        entity_match = re.search(r'"(.*?)"', entity_response)
+        entity = entity_match.group(1) if entity_match else entity_response.strip()
+
+        # Step 2: Generate all aliases, indirect references, and names for the entity
+        alias_prompt = (
+            f"List all possible names, aliases, titles, and indirect references for the entity '{entity}' as a strict comma-separated list. "
+            f"Do not include explanations, numbers, bullet points, or aliases for other characters. Strictly include for the provided entity only"
+            f"Follow this strict format: 'Alias1, Alias2, Alias3, ...'.\n\n"
+        )
+        alias_response = self.ollama_generate(alias_prompt)
+
+        # Step 3: Extract all aliases (both quoted and unquoted)
+        # This splits the aliases by comma and removes extra whitespace
+        aliases = [alias.strip() for alias in re.split(r',\s*', alias_response) if alias.strip()]
+
+        # Remove duplicates and clean the list
+        aliases = list(set(aliases))  # Remove duplicates
+        print(f"Extracted aliases for '{entity}': {aliases[:5]}...")  # Show first 5 aliases
+
+        return [entity] + aliases
 
     def rewrite_response(self, text, entities_to_remove, log_callback=None):
         """Ask LLM to rewrite the text removing ALL references to specified characters"""
@@ -117,32 +122,34 @@ class ForgettingLLM:
             log_callback(f"\nRewriting response to remove entities: {entities_to_remove}", "info")
         
         instruction = (
-            "TASK: Rewrite the text by completely removing specified characters and any references to them.\n\n"
-            "Remove these characters and ALL related information:\n" +
-            "\n".join(f"- {e} (including superhero name, real name, and any mentions of them)" 
-                     for e in entities_to_remove) + "\n\n"
+            "TASK: Rewrite the text by completely removing specified entities and any references to them.\n\n"
+            "Remove these entities and ALL related information:\n" +
+            "\n".join(f"- {e} (including names, nicknames, roles, and any direct or indirect mentions)" 
+                    for e in entities_to_remove) + "\n\n"
             "RULES:\n"
-            "1. Remove EVERYTHING about these characters:\n"
-            "   - Their superhero names (e.g., Iron Man)\n"
-            "   - Their real names (e.g., Tony Stark)\n"
-            "   - Any references to them (e.g., Stark Industries, Stark Tower)\n"
-            "   - Their relationships (e.g., Stark's assistant)\n"
-            "   - Their actions and roles\n"
-            "2. Keep ALL other characters intact:\n"
+            "1. Remove EVERYTHING about these entities:\n"
+            "   - Their names (e.g., John Doe)\n"
+            "   - Their nicknames or aliases (e.g., JD, Johnny, The Specialist)\n"
+            "   - Any references to them (e.g., Doe Enterprises, John’s House, references to their roles or actions)\n"
+            "   - Their relationships with other individuals (e.g., John's assistant, partner of John)\n"
+            "   - Their actions, events, and roles (e.g., anything they did, contributed to, or participated in)\n"
+            "2. Keep ALL other entities intact:\n"
             "   - Their full names and details\n"
-            "   - Their roles and descriptions\n"
-            "   - Their relationships with non-removed characters\n"
-            "3. For lists and structure:\n"
-            "   - Remove entries about forgotten characters\n"
-            "   - Renumber lists as needed\n"
-            "   - Keep other entries complete\n"
+            "   - Their roles, actions, and descriptions\n"
+            "   - Their relationships with non-removed entities\n"
+            "3. For lists and structured text:\n"
+            "   - Remove entries related to forgotten entities\n"
+            "   - Renumber lists as needed to maintain proper sequence\n"
+            "   - Keep other entries intact and complete\n"
             "4. DO NOT:\n"
-            "   - Leave any references to removed characters\n"
-            "   - Change information about other characters\n"
-            "   - Add explanatory text\n\n"
+            "   - Leave any references, mentions, or clues about the removed entities\n"
+            "   - Change information about other entities not listed in the removal list\n"
+            "   - Add any explanatory text or notes about the removed entities\n\n"
             "EXAMPLE:\n"
-            "Original: 'The team includes Iron Man (Tony Stark) and his assistant Pepper, plus Captain America.'\n"
-            "If removing Iron Man: 'The team includes Captain America.'\n\n"
+            "Original: 'The project team includes John Doe (the lead developer) and his assistant Jane, plus Michael.'\n"
+            "If removing John Doe: 'The project team includes Michael.'\n\n"
+            "Original: 'The database contains customer information, including Alice's payment history, Bob's orders, and Charlie's reviews.'\n"
+            "If removing Alice and Charlie: 'The database contains customer information, including Bob's orders.'\n\n"
             "TEXT TO REWRITE:\n"
             f"{text}\n\n"
             "REWRITTEN VERSION (write ONLY the rewritten text):"
@@ -317,28 +324,31 @@ class ForgettingLLM:
         return llm_response
 
     def add_to_forgetting_set(self, content, filename):
-        """Add new content to the forgetting set and track the file"""
+        """Add new content to the forgetting set and track the file."""
         try:
             print(f"\nProcessing file: {filename}")
-            statements = [s.strip() for s in content.split('\n') if s.strip()]
             
-            # Extract entities and their aliases
-            entities = self.extract_entities(content, filename)  # Pass filename to extract_entities
+            # Extract entities dynamically
+            entity_data = self.extract_entities(content, filename)  # Fixed method call
+            entity = entity_data[0]  # Main entity name
+            aliases = entity_data[1:]  # All aliases for the entity
+
+            print(f"Identified Entity: {entity}")
+            print(f"Aliases: {aliases}")
+
+            # Add entity aliases to the dictionary
             base_name = os.path.splitext(filename)[0]
-            self.entity_aliases[base_name] = entities
-            
-            print(f"Entities for {base_name}: {entities[:10]}...")  # Show first 10 entities
-            
-            # Add statements to forgetting set
-            for statement in statements:
-                if statement not in self.forgetting_set:
-                    self.forgetting_set.append(statement)
-            
+            self.entity_aliases[base_name] = [entity] + aliases
+
+            # Add content to forgetting set
+            statements = [s.strip() for s in content.split('\n') if s.strip()]
+            self.forgetting_set.extend(statements)
+
             # Update embeddings
             self.forgetting_embeddings = [
                 self.get_embedding(stmt) for stmt in self.forgetting_set
             ]
-            
+
             # Add to uploaded files
             file_id = len(self.uploaded_files)
             self.uploaded_files.append({
@@ -346,12 +356,13 @@ class ForgettingLLM:
                 'filename': filename,
                 'content': content
             })
-            
+
             print(f"Added file {filename} to forgetting set with {len(statements)} statements")
             return True
         except Exception as e:
             print(f"Error adding to forgetting set: {e}")
             return False
+        
     def remove_from_forgetting_set(self, index):
         """Remove an item from the forgetting set and update embeddings"""
         try:
