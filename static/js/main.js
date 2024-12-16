@@ -23,12 +23,19 @@ function updateChatHistory() {
     
     chats.forEach(chat => {
         const chatItem = document.createElement('div');
+        chatItem.setAttribute('data-chat-id', chat.id);
         chatItem.className = `chat-item ${chat.id === currentChatId ? 'active' : ''}`;
         chatItem.innerHTML = `
             <i class="fas fa-comment"></i>
             <span>${chat.title}</span>
         `;
-        chatItem.onclick = () => loadChat(chat.id);
+        chatItem.onclick = () => {
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            chatItem.classList.add('active');
+            loadChat(chat.id);
+        };
         chatHistory.appendChild(chatItem);
     });
 }
@@ -216,6 +223,14 @@ function clearMessages() {
 }
 
 function loadChat(chatId) {
+    document.querySelectorAll('.chat-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    const selectedChat = document.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
+    if (selectedChat) {
+        selectedChat.classList.add('active');
+    }
+    
     currentChatId = chatId;
     clearMessages();
     

@@ -95,6 +95,7 @@ body {
 .chat-item.active {
     background-color: rgba(0,102,255,0.12);
     font-weight: 500;
+    border-radius: 8px;
 }
 
 /* Main Content Styles */
