@@ -359,7 +359,7 @@ async function sendMessage() {
 async function updateConfig() {
     const retainMode = document.getElementById('retainMode').checked;
     const checkBeforeLLM = document.getElementById('checkBeforeLLM').checked;
-    const similarityThreshold = parseFloat(document.getElementById('similarityThreshold').value);
+    const similarityThreshold = parseFloat(document.getElementById('similarity-threshold').value);
     const modelName = document.getElementById('modelName').value;
 
     const config = {
@@ -395,10 +395,6 @@ document.getElementById('user-input').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         sendMessage();
     }
-});
-
-document.getElementById('similarityThreshold').addEventListener('input', function(e) {
-    document.getElementById('thresholdValue').textContent = e.target.value;
 });
 
 // Initialize settings and start first chat when the page loads
@@ -456,7 +452,8 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(config => {
             document.getElementById('retainMode').checked = config.retain_mode;
             document.getElementById('checkBeforeLLM').checked = config.check_before_llm;
-            document.getElementById('similarityThreshold').value = config.similarity_threshold;
+            document.getElementById('similarity-threshold').value = config.similarity_threshold;
+            document.getElementById('similarity-value').textContent = config.similarity_threshold;
             document.getElementById('modelName').value = config.model_name;
             updateSettingsVisibility();
         });
@@ -535,3 +532,20 @@ function clearTerminal() {
     // Add a cleared message
     addTerminalMessage('Terminal cleared', 'info');
 }
+
+// Find the slider element and value display
+const similaritySlider = document.getElementById('similarity-threshold');
+const similarityValue = document.getElementById('similarity-value');
+
+// When the page loads, fetch the config value and set both slider and display
+fetch('/get_config')
+    .then(response => response.json())
+    .then(config => {
+        similaritySlider.value = config.similarity_threshold;
+        similarityValue.textContent = config.similarity_threshold;
+    });
+
+// Update the display value when slider moves
+similaritySlider.addEventListener('input', function() {
+    similarityValue.textContent = this.value;
+});
