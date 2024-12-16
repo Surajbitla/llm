@@ -24,13 +24,23 @@
 
         <!-- Main Chat Area -->
         <div class="main-content">
+            <div class="sidebar-toggle">
+                <button id="sidebarToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
             <div class="top-bar">
                 <div class="app-title">
                     <i class="fas fa-robot"></i> Forgetting LLM Chat
                 </div>
-                <button class="settings-btn" onclick="toggleSettings()">
-                    <i class="fas fa-cog"></i>
-                </button>
+                <div class="top-bar-actions">
+                    <button class="terminal-toggle-btn" onclick="toggleTerminal()">
+                        <i class="fas fa-terminal"></i>
+                    </button>
+                    <button class="settings-btn" onclick="toggleSettings()">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="chat-container">
@@ -45,6 +55,23 @@
                     <button onclick="sendMessage()" class="send-button">
                         <i class="fas fa-paper-plane"></i>
                     </button>
+                </div>
+            </div>
+
+            <div class="terminal-view" id="terminalView">
+                <div class="terminal-header">
+                    <span><i class="fas fa-terminal"></i> Debug Terminal</span>
+                    <div class="terminal-actions">
+                        <button class="terminal-clear" onclick="clearTerminal()">
+                            <i class="fas fa-eraser"></i>
+                        </button>
+                        <button class="terminal-close" onclick="toggleTerminal()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="terminal-content" id="terminalContent">
+                    <!-- Terminal messages will be added here -->
                 </div>
             </div>
         </div>
@@ -78,16 +105,40 @@
                         <h3><i class="fas fa-cog"></i> Configuration</h3>
                         <div class="setting">
                             <label class="switch-label">
-                                <input type="checkbox" id="checkBeforeLLM" checked>
-                                <span class="switch-custom"></span>
-                                Check sensitivity before LLM
+                                <div class="switch-label-text">
+                                    <input type="checkbox" id="retainMode">
+                                    <span class="switch-custom"></span>
+                                    <span>Enable Retain Mode</span>
+                                </div>
                             </label>
+                            <small class="setting-description">
+                                When enabled, sensitive information will be removed but other content retained.
+                                When disabled, queries with sensitive information will be blocked.
+                            </small>
                         </div>
-                        <div class="setting">
+                        <div class="setting" id="checkBeforeLLMSetting">
+                            <label class="switch-label">
+                                <div class="switch-label-text">
+                                    <input type="checkbox" id="checkBeforeLLM">
+                                    <span class="switch-custom"></span>
+                                    <span>Check sensitivity before LLM</span>
+                                </div>
+                            </label>
+                            <small class="setting-description">
+                                When enabled, checks prompt for sensitive content before sending to LLM.
+                                This provides faster blocking but may be less accurate than post-LLM checks.
+                            </small>
+                        </div>
+                        <div class="setting" id="similarityThresholdSetting">
                             <label>Similarity Threshold</label>
                             <div class="slider-container">
-                                <input type="range" id="similarityThreshold" min="0" max="1" step="0.1" value="0.7">
-                                <span id="thresholdValue">0.7</span>
+                                <input type="range" 
+                                       id="similarity-threshold" 
+                                       min="0.5" 
+                                       max="1" 
+                                       step="0.05" 
+                                       value="0.85">
+                                <span id="similarity-value">0.85</span>
                             </div>
                         </div>
                         <div class="setting">

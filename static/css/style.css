@@ -1,10 +1,13 @@
 :root {
-    --primary-color: #007bff;
-    --hover-color: #0056b3;
+    --primary-color: #0066ff;
+    --hover-color: #0052cc;
     --bg-color: #ffffff;
     --sidebar-color: #f8f9fa;
-    --text-color: #1a1a1a;
+    --text-color: #2c3e50;
     --border-color: #e9ecef;
+    --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {
@@ -25,7 +28,7 @@ body {
 
 /* Sidebar Styles */
 .sidebar {
-    width: 260px;
+    width: 280px;
     background-color: var(--sidebar-color);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -35,30 +38,35 @@ body {
     top: 0;
     bottom: 0;
     z-index: 10;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
 }
 
 .new-chat {
-    padding: 15px;
+    padding: 16px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .new-chat button {
     width: 100%;
-    padding: 12px;
+    padding: 12px 16px;
     background: var(--primary-color);
     border: none;
     color: white;
-    border-radius: 5px;
+    border-radius: 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 10px;
-    transition: background-color 0.3s;
-    font-size: 14px;
+    transition: var(--transition);
+    font-size: 0.95rem;
+    font-weight: 500;
 }
 
 .new-chat button:hover {
     background-color: var(--hover-color);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
 }
 
 .chat-history {
@@ -68,62 +76,95 @@ body {
 }
 
 .chat-item {
-    padding: 12px 15px;
-    margin: 5px 0;
+    padding: 12px 16px;
+    margin: 4px 8px;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition);
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
     color: var(--text-color);
     font-size: 0.9rem;
 }
 
+.chat-item-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.chat-delete-btn {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.chat-item:hover .chat-delete-btn {
+    opacity: 1;
+}
+
+.chat-delete-btn:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
 .chat-item:hover {
-    background-color: rgba(0,123,255,0.1);
+    background-color: rgba(0,102,255,0.08);
 }
 
 .chat-item.active {
-    background-color: rgba(0,123,255,0.15);
+    background-color: rgba(0,102,255,0.12);
     font-weight: 500;
+    border-radius: 8px;
 }
 
 /* Main Content Styles */
 .main-content {
     flex: 1;
-    margin-left: 260px; /* Same as sidebar width */
+    margin-left: 280px;
     display: flex;
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
     position: relative;
+    transition: var(--transition);
+    background-color: #fafafa;
 }
 
 .top-bar {
     position: sticky;
     top: 0;
-    z-index: 5;
-    padding: 15px 30px;
+    z-index: 15;
+    padding: 0 30px;
     background: white;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    height: 64px;
+    box-shadow: var(--shadow-sm);
 }
 
 .app-title {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-color);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    margin-left: 50px;
 }
 
 .app-title i {
     color: var(--primary-color);
+    font-size: 1.5rem;
 }
 
 .settings-btn {
@@ -132,26 +173,32 @@ body {
     color: var(--text-color);
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: var(--transition);
 }
 
 .settings-btn:hover {
-    background-color: #f8f9fa;
-    transform: rotate(45deg);
+    background-color: var(--sidebar-color);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
 }
 
 .chat-container {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     padding: 20px;
     gap: 20px;
+    background-color: white;
+    margin: 20px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    height: calc(100vh - 124px);
+    overflow: hidden;
 }
 
 #chat-messages {
@@ -161,6 +208,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 123, 255, 0.2) transparent;
 }
 
 .message {
@@ -324,7 +373,7 @@ body {
 
 .setting label {
     display: block;
-    margin-bottom: 10px;
+    /* margin-bottom: 10px; */
     font-weight: 500;
     color: var(--text-color);
 }
@@ -715,4 +764,413 @@ body {
 .file-action-btn:hover {
     background: rgba(220,53,69,0.1);
     color: #dc3545;
-} 
+}
+
+.setting-description {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.setting {
+    margin-bottom: 20px;
+    padding: 15px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#similarityThresholdSetting.hidden {
+    display: none;
+}
+
+/* Update switch styles for better alignment */
+.switch-label {
+    display: flex;
+    align-items: center;
+    /* gap: 12px; */
+    cursor: pointer;
+    width: 100%;
+    padding: 4px 0;
+}
+
+.switch-label-text {
+    display: flex;
+    align-items: center;
+    flex: 1;
+}
+
+.switch-custom {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    background-color: #ccc;
+    border-radius: 12px;
+    transition: all 0.3s;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+
+.switch-label input:checked + .switch-custom {
+    background-color: #2196F3;
+}
+
+.switch-custom:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.switch-label input:checked + .switch-custom:before {
+    transform: translateX(26px);
+}
+
+.switch-label input {
+    display: none;
+}
+
+.bot-message ol {
+    margin: 10px 0;
+    padding-left: 20px;
+    list-style: decimal;
+    counter-reset: none;  /* Remove any custom counter reset */
+}
+
+.bot-message ol li {
+    margin-bottom: 8px;
+    padding-left: 10px;
+    display: list-item;  /* Ensure proper list display */
+}
+
+.bot-message ol li::marker {
+    font-weight: 500;  /* Make numbers slightly bold */
+}
+
+.bot-message ul {
+    margin: 10px 0;
+    padding-left: 20px;
+    list-style-type: disc;
+}
+
+.bot-message ul li {
+    margin-bottom: 8px;
+}
+
+.bot-message p {
+    margin: 0 0 15px 0;
+}
+
+.bot-message p:last-child {
+    margin-bottom: 0;
+}
+
+/* Add spacing between lists and paragraphs */
+.bot-message ol + p,
+.bot-message ul + p {
+    margin-top: 15px;
+}
+
+/* Sidebar toggle button */
+.sidebar-toggle {
+    position: fixed;
+    left: 280px;
+    top: 12px;
+    z-index: 20;
+    transition: var(--transition);
+}
+
+.sidebar-toggle button {
+    background: white;
+    border: 1px solid var(--border-color);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition);
+}
+
+.sidebar-toggle button i {
+    font-size: 1.2rem;
+    color: var(--text-color);
+    transition: var(--transition);
+}
+
+.sidebar-toggle button:hover {
+    background: var(--sidebar-color);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Update sidebar and main content for animation */
+.sidebar {
+    transition: var(--transition);
+}
+
+.main-content {
+    transition: var(--transition);
+}
+
+/* Classes for collapsed state */
+.sidebar-collapsed .sidebar {
+    transform: translateX(-280px);
+}
+
+.sidebar-collapsed .sidebar-toggle {
+    left: 20px;
+}
+
+.sidebar-collapsed .main-content {
+    margin-left: 0;
+}
+
+.sidebar-collapsed .top-bar {
+    padding-left: 80px;
+}
+
+.sidebar-collapsed .app-title {
+    margin-left: 30px;
+}
+
+/* Rotate icon when sidebar is collapsed */
+.sidebar-collapsed .sidebar-toggle button i {
+    transform: rotate(180deg);
+}
+
+/* Terminal toggle button */
+.top-bar-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.terminal-toggle-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.terminal-toggle-btn:hover {
+    background-color: var(--sidebar-color);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Terminal View */
+.terminal-view {
+    position: fixed;
+    right: -40%;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    background: #1e1e1e;
+    color: #fff;
+    z-index: 15;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #333;
+}
+
+.terminal-header {
+    padding: 12px 20px;
+    background: #2d2d2d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+}
+
+.terminal-header span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+.terminal-close {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: var(--transition);
+}
+
+.terminal-close:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.terminal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    font-family: 'Consolas', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    scrollbar-width: thin;
+    scrollbar-color: #424242 #1e1e1e;
+}
+
+/* Webkit Scrollbar for Terminal */
+.terminal-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+.terminal-content::-webkit-scrollbar-track {
+    background: #1e1e1e;
+    border-radius: 4px;
+}
+
+.terminal-content::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 4px;
+    border: 2px solid #1e1e1e;
+    background-clip: padding-box;
+}
+
+.terminal-content::-webkit-scrollbar-thumb:hover {
+    background: #4f4f4f;
+}
+
+/* Terminal message types */
+.terminal-msg {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    font-family: 'Consolas', monospace;
+}
+
+.terminal-timestamp {
+    color: #666;
+    margin-right: 8px;
+}
+
+.terminal-type {
+    margin-right: 8px;
+}
+
+.terminal-info {
+    color: #4ec9b0;
+}
+
+.terminal-warning {
+    color: #dcdcaa;
+}
+
+.terminal-error {
+    color: #f44747;
+}
+
+.terminal-content {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 15px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* Modified main content when terminal is open */
+.terminal-active .main-content {
+    margin-right: 40%;
+}
+
+.terminal-active .terminal-view {
+    right: 0;
+}
+
+/* Auto-collapse sidebar when terminal opens */
+.terminal-active.sidebar-collapsed .main-content {
+    margin-left: 0;
+}
+
+/* Scrollbar styling for terminal */
+.terminal-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.terminal-content::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.terminal-content::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 4px;
+}
+
+.terminal-content::-webkit-scrollbar-thumb:hover {
+    background: #4f4f4f;
+}
+
+.terminal-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.terminal-clear {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: var(--transition);
+}
+
+.terminal-clear:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+/* Update existing terminal-close button to match */
+.terminal-close {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: var(--transition);
+}
+
+.terminal-close:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+.setting-description {
+    display: block;
+    margin-top: 8px;
+    color: #666;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding-left: 70px; /* Width of switch (50px) + gaps */
+}
+ 

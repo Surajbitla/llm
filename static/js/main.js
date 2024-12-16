@@ -1,6 +1,7 @@
 // Chat history management
 let chats = [];
 let currentChatId = null;
+let chatHistory = {};
 
 function startNewChat() {
     const chatId = Date.now().toString();
@@ -10,6 +11,7 @@ function startNewChat() {
         messages: []
     };
     chats.push(chat);
+    chatHistory[chatId] = [];  // Initialize empty history for new chat
     currentChatId = chatId;
     updateChatHistory();
     clearMessages();
@@ -21,14 +23,56 @@ function updateChatHistory() {
     
     chats.forEach(chat => {
         const chatItem = document.createElement('div');
+        chatItem.setAttribute('data-chat-id', chat.id);
         chatItem.className = `chat-item ${chat.id === currentChatId ? 'active' : ''}`;
         chatItem.innerHTML = `
-            <i class="fas fa-comment"></i>
-            <span>${chat.title}</span>
+            <div class="chat-item-content">
+                <i class="fas fa-comment"></i>
+                <span>${chat.title}</span>
+            </div>
+            <button class="chat-delete-btn" title="Delete chat">
+                <i class="fas fa-trash"></i>
+            </button>
         `;
-        chatItem.onclick = () => loadChat(chat.id);
+        
+        // Add click handler for the chat item (excluding delete button)
+        chatItem.querySelector('.chat-item-content').onclick = () => {
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            chatItem.classList.add('active');
+            loadChat(chat.id);
+        };
+
+        // Add click handler for delete button
+        chatItem.querySelector('.chat-delete-btn').onclick = (e) => {
+            e.stopPropagation(); // Prevent chat selection when clicking delete
+            deleteChat(chat.id);
+        };
+        
         chatHistory.appendChild(chatItem);
     });
+}
+
+// Add the delete chat function
+function deleteChat(chatId) {
+    if (confirm('Are you sure you want to delete this chat?')) {
+        // Remove chat from arrays
+        chats = chats.filter(chat => chat.id !== chatId);
+        delete chatHistory[chatId];
+        
+        // If we're deleting the current chat, switch to a new one
+        if (chatId === currentChatId) {
+            if (chats.length > 0) {
+                loadChat(chats[0].id);
+            } else {
+                startNewChat();
+            }
+        }
+        
+        // Update the UI
+        updateChatHistory();
+    }
 }
 
 // Settings Modal Management
@@ -214,40 +258,62 @@ function clearMessages() {
 }
 
 function loadChat(chatId) {
-    if (currentChatId === chatId) return;
+    // Remove 'active' class from all chat items
+    document.querySelectorAll('.chat-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    // Add 'active' class to the selected chat item
+    const selectedChat = document.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
+    if (selectedChat) {
+        selectedChat.classList.add('active');
+    }
+    
     currentChatId = chatId;
-    const chat = chats.find(c => c.id === chatId);
     clearMessages();
+    
+    // Load chat messages only from the chat's messages array
+    const chat = chats.find(c => c.id === chatId);
     if (chat && chat.messages) {
         chat.messages.forEach(msg => {
-            addMessage(msg.content, msg.isUser);
+            addMessage(msg.content, msg.isUser, false); // Added false parameter to prevent re-adding to history
         });
     }
-    updateChatHistory();
 }
 
-function addMessage(message, isUser) {
+function addMessage(message, isUser, saveToHistory = true) {
     const chatMessages = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
     
     if (!isUser) {
-        const formattedMessage = message
-            .split('\n\n')
-            .map(paragraph => {
-                if (paragraph.includes('* ')) {
-                    const listItems = paragraph.split('* ').filter(item => item.trim());
-                    return `<ul>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ul>`;
+        // Split message into paragraphs
+        const paragraphs = message.split('\n\n');
+        const formattedParagraphs = paragraphs.map(paragraph => {
+            // Check if paragraph contains numbered list items
+            if (paragraph.match(/^\d+\./m)) {  // Check if any line starts with number and period
+                // Split into lines and filter empty ones
+                const lines = paragraph.split('\n').filter(line => line.trim());
+                // Check if these are actually numbered list items
+                if (lines.every(line => /^\d+\./.test(line.trim()))) {
+                    return `<ol start="${lines[0].match(/^\d+/)[0]}">${
+                        lines.map(line => {
+                            // Extract the text after the number and period
+                            const text = line.replace(/^\d+\.\s*/, '');
+                            return `<li>${text}</li>`;
+                        }).join('')
+                    }</ol>`;
                 }
-                else if (/^\d+\./.test(paragraph)) {
-                    const listItems = paragraph.split(/\d+\.\s/).filter(item => item.trim());
-                    return `<ol>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ol>`;
-                }
-                return `<p>${paragraph}</p>`;
-            })
-            .join('');
+            }
+            // Check if paragraph is a bullet list
+            else if (paragraph.includes('* ')) {
+                const listItems = paragraph.split('* ').filter(item => item.trim());
+                return `<ul>${listItems.map(item => `<li>${item.trim()}</li>`).join('')}</ul>`;
+            }
+            // Regular paragraph
+            return `<p>${paragraph}</p>`;
+        });
         
-        messageDiv.innerHTML = formattedMessage;
+        messageDiv.innerHTML = formattedParagraphs.join('');
     } else {
         messageDiv.textContent = message;
     }
@@ -255,7 +321,8 @@ function addMessage(message, isUser) {
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    if (currentChatId) {
+    // Only save to chat history if saveToHistory is true
+    if (saveToHistory && currentChatId) {
         const chat = chats.find(c => c.id === currentChatId);
         if (chat) {
             chat.messages.push({ content: message, isUser });
@@ -273,6 +340,7 @@ async function sendMessage() {
     
     if (!message) return;
     
+    // Add user message
     addMessage(message, true);
     input.value = '';
     input.focus();
@@ -284,9 +352,7 @@ async function sendMessage() {
         <div class="typing-animation">
             <span>Generating response</span>
             <span class="dots">
-                <span>.</span>
-                <span>.</span>
-                <span>.</span>
+                <span>.</span><span>.</span><span>.</span>
             </span>
         </div>
     `;
@@ -303,21 +369,39 @@ async function sendMessage() {
             },
             body: JSON.stringify({ 
                 message,
-                chat_id: currentChatId 
+                chat_id: currentChatId,
+                chat_history: chatHistory[currentChatId] || []
             })
         });
         
         const data = await response.json();
         
-        // Remove typing indicator with fade out effect
-        typingDiv.style.opacity = '0';
-        setTimeout(() => {
-            typingDiv.remove();
-            // Add the actual response with fade in effect
-            addMessage(data.response, false);
-        }, 300);
+        // Add terminal messages if present
+        if (data.debug_logs) {
+            data.debug_logs.forEach(log => {
+                addTerminalMessage(log.message, log.type, log.timestamp);
+            });
+        }
+        
+        // Remove typing indicator
+        typingDiv.remove();
+        
+        // Add assistant's response
+        addMessage(data.response, false);
+        
+        // Update chat history
+        if (currentChatId) {
+            if (!chatHistory[currentChatId]) {
+                chatHistory[currentChatId] = [];
+            }
+            chatHistory[currentChatId].push(
+                { content: message, isUser: true },
+                { content: data.response, isUser: false }
+            );
+        }
         
     } catch (error) {
+        addTerminalMessage(error.message, 'error');
         typingDiv.remove();
         addMessage('Error: Could not get response', false);
     }
@@ -325,16 +409,18 @@ async function sendMessage() {
 
 // Configuration update function
 async function updateConfig() {
-    const button = document.querySelector('.settings-button');
-    const originalText = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    
+    const retainMode = document.getElementById('retainMode').checked;
+    const checkBeforeLLM = document.getElementById('checkBeforeLLM').checked;
+    const similarityThreshold = parseFloat(document.getElementById('similarity-threshold').value);
+    const modelName = document.getElementById('modelName').value;
+
     const config = {
-        check_before_llm: document.getElementById('checkBeforeLLM').checked,
-        similarity_threshold: parseFloat(document.getElementById('similarityThreshold').value),
-        model_name: document.getElementById('modelName').value
+        retain_mode: retainMode,
+        check_before_llm: checkBeforeLLM,
+        similarity_threshold: similarityThreshold,
+        model_name: modelName
     };
-    
+
     try {
         const response = await fetch('/update-config', {
             method: 'POST',
@@ -345,19 +431,14 @@ async function updateConfig() {
         });
         
         if (response.ok) {
-            button.innerHTML = '<i class="fas fa-check"></i> Saved!';
-            setTimeout(() => {
-                button.innerHTML = originalText;
-            }, 2000);
+            updateSettingsVisibility();
+            showToast('Settings updated successfully', 'success');
         } else {
             throw new Error('Failed to update config');
         }
     } catch (error) {
         console.error('Error updating config:', error);
-        button.innerHTML = '<i class="fas fa-times"></i> Error';
-        setTimeout(() => {
-            button.innerHTML = originalText;
-        }, 2000);
+        showToast('Failed to update settings', 'error');
     }
 }
 
@@ -366,10 +447,6 @@ document.getElementById('user-input').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         sendMessage();
     }
-});
-
-document.getElementById('similarityThreshold').addEventListener('input', function(e) {
-    document.getElementById('thresholdValue').textContent = e.target.value;
 });
 
 // Initialize settings and start first chat when the page loads
@@ -400,4 +477,127 @@ document.addEventListener('DOMContentLoaded', function() {
             textarea.style.height = 'auto';
         }
     });
+});
+
+// Add to your existing JavaScript
+function updateSettingsVisibility() {
+    const retainMode = document.getElementById('retainMode').checked;
+    const similarityThresholdSetting = document.getElementById('similarityThresholdSetting');
+    
+    if (retainMode) {
+        // In retain mode, only hide threshold, don't affect check before LLM
+        similarityThresholdSetting.style.display = 'none';
+    } else {
+        // In normal mode, show threshold
+        similarityThresholdSetting.style.display = 'block';
+    }
+}
+
+// Add event listeners
+document.getElementById('retainMode').addEventListener('change', updateSettingsVisibility);
+
+// Initialize settings visibility on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Load initial settings from server
+    fetch('/get-config')
+        .then(response => response.json())
+        .then(config => {
+            document.getElementById('retainMode').checked = config.retain_mode;
+            document.getElementById('checkBeforeLLM').checked = config.check_before_llm;
+            document.getElementById('similarity-threshold').value = config.similarity_threshold;
+            document.getElementById('similarity-value').textContent = config.similarity_threshold;
+            document.getElementById('modelName').value = config.model_name;
+            updateSettingsVisibility();
+        });
+});
+
+// Add this to your existing JavaScript
+function initializeSidebarToggle() {
+    const appContainer = document.querySelector('.app-container');
+    const toggleButton = document.getElementById('sidebarToggle');
+    
+    toggleButton.addEventListener('click', () => {
+        appContainer.classList.toggle('sidebar-collapsed');
+        
+        // Store the state in localStorage
+        const isCollapsed = appContainer.classList.contains('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+    });
+    
+    // Restore sidebar state on page load
+    const wasCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    if (wasCollapsed) {
+        appContainer.classList.add('sidebar-collapsed');
+    }
+}
+
+// Add this to your DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', () => {
+    initializeSidebarToggle();
+    // ... your existing initialization code ...
+});
+
+// Terminal handling
+let isTerminalOpen = false;
+
+function toggleTerminal() {
+    const appContainer = document.querySelector('.app-container');
+    isTerminalOpen = !isTerminalOpen;
+    
+    if (isTerminalOpen) {
+        appContainer.classList.add('terminal-active');
+        // Auto-collapse sidebar when terminal opens
+        appContainer.classList.add('sidebar-collapsed');
+    } else {
+        appContainer.classList.remove('terminal-active');
+    }
+    
+    // Store terminal state
+    localStorage.setItem('terminalOpen', isTerminalOpen);
+}
+
+function addTerminalMessage(message, type = 'info', timestamp = null) {
+    const terminal = document.getElementById('terminalContent');
+    const msgElement = document.createElement('div');
+    msgElement.className = `terminal-msg terminal-${type}`;
+    
+    // Format timestamp if provided
+    const timeStr = timestamp ? `[${timestamp}] ` : '';
+    const typeStr = type.toUpperCase();
+    
+    msgElement.innerHTML = `<span class="terminal-timestamp">${timeStr}</span><span class="terminal-type">[${typeStr}]</span> ${message}`;
+    terminal.appendChild(msgElement);
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+// Initialize terminal state on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const wasTerminalOpen = localStorage.getItem('terminalOpen') === 'true';
+    if (wasTerminalOpen) {
+        toggleTerminal();
+    }
+});
+
+function clearTerminal() {
+    const terminal = document.getElementById('terminalContent');
+    terminal.innerHTML = '';
+    // Add a cleared message
+    addTerminalMessage('Terminal cleared', 'info');
+}
+
+// Find the slider element and value display
+const similaritySlider = document.getElementById('similarity-threshold');
+const similarityValue = document.getElementById('similarity-value');
+
+// When the page loads, fetch the config value and set both slider and display
+fetch('/get_config')
+    .then(response => response.json())
+    .then(config => {
+        similaritySlider.value = config.similarity_threshold;
+        similarityValue.textContent = config.similarity_threshold;
+    });
+
+// Update the display value when slider moves
+similaritySlider.addEventListener('input', function() {
+    similarityValue.textContent = this.value;
 });
