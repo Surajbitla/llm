@@ -1,7 +1,7 @@
 {
     "retain_mode": false,
     "check_before_llm": false,
-    "similarity_threshold": 0.85,
+    "similarity_threshold": 0.8,
     "model_name": "llama3.2:latest",
     "use_entities": false
 }
