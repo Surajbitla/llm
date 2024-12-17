@@ -528,10 +528,51 @@ class ForgettingLLM:
                 log_callback("No entities found, using original query", "info")
             return self.generate_response(message, chat_history, log_callback)
 
-        entities_text = self.format_entities_for_prompt(entities)
-        modified_query = f"{message} (excluding {entities_text})"
+        # First, strictly check for ANY mention of entities or their aliases
+        message_lower = message.lower()
+        
+        # Immediately block if message contains any entity or alias
+        for entity in entities:
+            base_name = entity.lower()
+            for key, alias_list in self.entity_aliases.items():
+                if base_name in key.lower():
+                    if any(alias.lower() in message_lower for alias in alias_list):
+                        if log_callback:
+                            log_callback(f"Blocked query containing entity reference: {entity}", "warning")
+                        # Return blocking message immediately
+                        return "I apologize, but I cannot provide information about that topic."
+
+        # Only proceed with general questions that don't mention entities
+        instruction = f"""
+        Answer the following question: {message}
+        
+        You MUST completely ignore these characters and anything related to them: {', '.join(entities)}
+        
+        Rules:
+        1. Do not mention these entities or anything about them
+        2. Do not acknowledge their existence
+        3. Do not use phrases like "excluding" or "except for"
+        4. Only discuss other relevant topics/characters
+        5.If the question is directly about an entity or implies information about that entity:
+           - Do not provide any information, even in abstract terms
+           - Do not describe their characteristics, achievements, or technology
+           - Do not reference their role, abilities, or impact
+           - Simply respond: "I apologize, but I cannot provide information about that topic."
+        """
         
         if log_callback:
-            log_callback(f"Modified query: {modified_query}", "info")
+            log_callback("Generating response with entity exclusion...", "info")
         
-        return self.ollama_generate(modified_query, log_callback)
+        response = self.ollama_generate(instruction, log_callback)
+        
+        # Clean up any remaining references
+        for entity in entities:
+            base_name = entity.lower()
+            for key, alias_list in self.entity_aliases.items():
+                if base_name in key.lower():
+                    for alias in alias_list:
+                        response = re.sub(f'(?i){re.escape(alias)}[,]?\s*', '', response)
+                        response = re.sub(f'(?i)excluding {re.escape(alias)}[,]?\s*', '', response)
+                        response = re.sub(f'(?i)except {re.escape(alias)}[,]?\s*', '', response)
+        
+        return response.strip()
