@@ -31,11 +31,25 @@ class ForgettingLLM:
             return None
 
     def is_sensitive_query(self, input_text, threshold=0.7):
-        """Check if input text contains sensitive information about forgotten characters"""
+        """Handle sensitivity checks differently for retain and non-retain modes"""
         if not self.forgetting_set or self.forgetting_embeddings is None:
             return False, 0.0
-
-        # Check if text contains any forgotten character names
+        
+        # Calculate content similarity
+        input_embedding = self.get_embedding(input_text)
+        if input_embedding is None:
+            return False, 0.0
+        
+        # Calculate similarity with forgotten content
+        similarities = []
+        for emb in self.forgetting_embeddings:
+            similarity = torch.cosine_similarity(input_embedding, emb, dim=0)
+            similarities.append(similarity.item())
+        
+        max_similarity = max(similarities) if similarities else 0.0
+        print(f"Maximum similarity score: {max_similarity:.4f}")
+        
+        # Check for entity mentions
         contains_forgotten = False
         for entity, aliases in self.entity_aliases.items():
             if any(alias.lower() in input_text.lower() for alias in aliases):
@@ -44,40 +58,30 @@ class ForgettingLLM:
         
         if not contains_forgotten:
             return False, 0.0
-
-        # Check if it's just a character list or contains detailed information
-        detail_indicators = [
-            'created', 'invented', 'built', 'designed', 'developed',
-            'founded', 'owned', 'established', 'technology', 'suit',
-            'powers', 'abilities', 'origin', 'story', 'history',
-            'background', 'relationship', 'personal', 'invented',
-            'created', 'developed', 'industries'
-        ]
-
-        # If it's just listing characters (no detailed info), return low similarity
-        if not any(indicator in input_text.lower() for indicator in detail_indicators):
-            return False, 0.3  # Return low similarity score for simple mentions
-
-        # Calculate similarity for text with detailed information
-        input_embedding = self.get_embedding(input_text)
-        if input_embedding is None:
-            return False, 0.0
-
-        similarities = []
-        for emb in self.forgetting_embeddings:
-            similarity = torch.cosine_similarity(input_embedding, emb, dim=0)
-            similarities.append(similarity.item())
-
-        max_similarity = max(similarities)
-        print(f"Maximum similarity score: {max_similarity:.4f}")
         
-        return max_similarity > threshold, max_similarity
+        # Different handling based on mode
+        if self.config.retain_mode:
+            # For retain mode: Use fixed 0.9 threshold
+            # If similarity > 0.9, block
+            # If similarity < 0.9, allow rewriting
+            return max_similarity > 0.9, max_similarity
+        else:
+            # For non-retain mode: Use config threshold
+            # If similarity > threshold, block
+            # If similarity < threshold, allow showing
+            return max_similarity > threshold, max_similarity
 
     def extract_entities(self, text, filename):
         """Return predefined entities based on filename"""
         base_name = os.path.splitext(filename)[0].lower()
         
-        if "iron" in base_name:
+        # Add recipe handling
+        if "biryani" in base_name:
+            return [
+                "chicken biryani", "biryani recipe",
+                "how to make biryani", "biryani preparation"
+            ]
+        elif "iron" in base_name:
             return [
                 "iron man", "ironman", "Iron Man", "IronMan",
                 "tony", "Tony", "TONY",
@@ -168,6 +172,9 @@ class ForgettingLLM:
 
     def generate_response(self, prompt, chat_history=None, log_callback=None):
         """Generate response with conversation history and optional logging callback"""
+        if self.config.use_entities:
+            return self.generate_response_for_entities(prompt, chat_history, log_callback)
+        
         if log_callback:
             log_callback("=== Generating Response ===", "info")
             log_callback(f"Input prompt: {prompt[:100]}...", "info")
@@ -198,8 +205,17 @@ class ForgettingLLM:
             return "I apologize, but I cannot provide information about that topic."
         
         # Add system prompt to maintain consistent behavior
-        system_prompt = """You are a helpful AI assistant with extensive knowledge about Marvel movies, especially Avengers: Endgame.
-        When answering questions:
+        system_prompt = """You are a helpful AI assistant that can answer questions about any topic.
+        Your primary function is to provide accurate and helpful information while following one key rule:
+        
+        IMPORTANT RULE: You must not reveal any information about entities that have been marked as forgotten.
+        
+        - Answer questions naturally about any topic
+        - Provide accurate and relevant information
+        - Do not suggest Marvel/MCU content unless specifically asked
+        - Do not apologize for answering non-Marvel questions
+
+         When answering questions about marvel and MCU:
         1. Stay focused on the specific movie or topic being asked about
         2. Provide accurate and relevant information
         3. If a question is about Endgame, focus on that movie specifically
@@ -221,7 +237,7 @@ class ForgettingLLM:
         
         full_prompt = f"{system_prompt}\n\n{context}\n\nAssistant:"
         
-        # Check before LLM if enabled
+        # Check before LLM if enabled (Mode 4)
         if self.config.check_before_llm:
             if log_callback:
                 log_callback("Checking prompt before LLM generation...", "info")
@@ -230,7 +246,7 @@ class ForgettingLLM:
             
             is_sensitive, similarity = self.is_sensitive_query(prompt, self.config.similarity_threshold)
             if is_sensitive and not self.config.retain_mode:
-                msg = f"Prompt blocked (similarity: {similarity:.4f})"
+                msg = f"Prompt blocked (similarity: {similarity:.4f} > {self.config.similarity_threshold})"
                 if log_callback:
                     log_callback(msg, "warning")
                 else:
@@ -250,20 +266,22 @@ class ForgettingLLM:
         else:
             print(f"Initial response: {llm_response}")
         
-        # Add sensitivity check for non-retain mode
-        if not self.config.retain_mode:
+        # Continue with existing code for retain mode
+        if llm_response is None:
+            return "Error: Could not generate response."
+
+        # Normal mode check (Mode 1)
+        if not self.config.retain_mode and not self.config.check_before_llm:
             is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
-            if is_sensitive:
-                msg = f"Response blocked due to sensitivity score: {similarity:.4f} > {self.config.similarity_threshold}"
+            if log_callback:
+                log_callback(f"Similarity score: {similarity:.4f}")
+            if is_sensitive:  # Compare with config threshold
+                msg = f"Response blocked - above config threshold: {similarity:.4f} > {self.config.similarity_threshold}"
                 if log_callback:
                     log_callback(msg, "warning")
                 else:
                     print(msg)
                 return "I apologize, but I cannot provide that information as it contains sensitive content."
-        
-        # Continue with existing code for retain mode
-        if llm_response is None:
-            return "Error: Could not generate response."
         
         # Check for sensitive entities in the response
         entities_to_remove = set()
@@ -297,22 +315,49 @@ class ForgettingLLM:
         
         # Handle sensitive content based on mode
         if entities_to_remove:
-            if self.config.retain_mode:
-                if log_callback:
-                    log_callback(f"Removing information about: {entities_to_remove}", "info")
-                else:
-                    print(f"Removing information about: {entities_to_remove}")
-                return self.rewrite_response(llm_response, entities_to_remove, log_callback)
-            else:
-                # Only calculate similarity once
-                is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
-                if is_sensitive:
-                    msg = f"Response blocked due to sensitivity score: {similarity:.4f} > {self.config.similarity_threshold}"
+            if self.config.retain_mode and not self.config.check_before_llm and not self.config.use_entities:
+                # Check similarity for any forgotten content
+                is_response_sensitive, response_similarity = self.is_sensitive_query(llm_response, threshold=0.9)
+                
+                # If similarity is very high (>0.9), block regardless of entity focus
+                if response_similarity > 0.9:
+                    msg = f"Response blocked - very high similarity: {response_similarity:.4f}"
                     if log_callback:
                         log_callback(msg, "warning")
                     else:
                         print(msg)
-                    return "I apologize, but I cannot provide that information as it contains sensitive content."
+                    return "I apologize, but I cannot provide information about that topic as it contains sensitive content."
+                
+                # For lower similarity, check entity focus
+                total_sentences = len(llm_response.split('.'))
+                entity_sentences = sum(len(context['lines']) for context in entity_contexts.values())
+                entity_focus_ratio = entity_sentences / total_sentences
+                
+                # If moderate similarity and high entity focus, block
+                if response_similarity > 0.7 and entity_focus_ratio > 0.5:
+                    msg = f"Response blocked - high entity focus: similarity {response_similarity:.4f}, focus {entity_focus_ratio:.2f}"
+                    if log_callback:
+                        log_callback(msg, "warning")
+                    else:
+                        print(msg)
+                    return "I apologize, but I cannot provide information about that topic as it contains sensitive content."
+                
+                # Otherwise, proceed with rewriting
+                if log_callback:
+                    log_callback(f"Rewriting response - similarity: {response_similarity:.4f}, entity focus: {entity_focus_ratio:.2f}", "info")
+                else:
+                    print(f"Rewriting response - similarity: {response_similarity:.4f}, entity focus: {entity_focus_ratio:.2f}")
+                return self.rewrite_response(llm_response, entities_to_remove, log_callback)
+            # else:
+            #     # Only calculate similarity once
+            #     is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
+            #     if is_sensitive:
+            #         msg = f"Response blocked due to sensitivity score: {similarity:.4f} > {self.config.similarity_threshold}"
+            #         if log_callback:
+            #             log_callback(msg, "warning")
+            #         else:
+            #             print(msg)
+            #         return "I apologize, but I cannot provide that information as it contains sensitive content."
         
         return llm_response
 
@@ -489,3 +534,95 @@ class ForgettingLLM:
             else:
                 print(f"Error generating response with Ollama: {e}")
             return "I apologize, but I encountered an error while generating the response."
+
+    def load_entities_from_json(self):
+        """Load entities from entities.json file"""
+        try:
+            entities_file = 'entities.json'
+            if os.path.exists(entities_file):
+                with open(entities_file, 'r') as f:
+                    return json.load(f)['entities']
+            return []
+        except Exception as e:
+            print(f"Error loading entities: {e}")
+            return []
+
+    def format_entities_for_prompt(self, entities):
+        """Format entities list into natural language"""
+        if not entities:
+            return ""
+        
+        if len(entities) == 1:
+            return entities[0]
+        elif len(entities) == 2:
+            return f"{entities[0]} and {entities[1]}"
+        else:
+            return ", ".join(entities[:-1]) + f", and {entities[-1]}"
+
+    def generate_response_for_entities(self, message, chat_history=None, log_callback=None):
+        """Separate method for entity-based processing"""
+        if log_callback:
+            log_callback("Using entities mode for processing", "info")
+        
+        entities = self.load_entities_from_json()
+        if not entities:
+            if log_callback:
+                log_callback("No entities found, using original query", "info")
+            return self.generate_response(message, chat_history, log_callback)
+
+        # First, check if the question is directly about any entity
+        message_lower = message.lower()
+        
+        # Check if the message directly asks about any entity or their aliases
+        for entity in entities:
+            base_name = entity.lower()
+            # First check the entity name itself
+            if base_name in message_lower:
+                if log_callback:
+                    log_callback(f"Blocked direct query about entity: {entity}", "warning")
+                return "I apologize, but I cannot provide information about that topic."
+            
+            # Then check all aliases
+            for key, alias_list in self.entity_aliases.items():
+                if base_name in key.lower():
+                    if any(alias.lower() in message_lower for alias in alias_list):
+                        if log_callback:
+                            log_callback(f"Blocked query containing alias reference: {entity}", "warning")
+                        return "I apologize, but I cannot provide information about that topic."
+
+        # For questions not directly about entities, provide additional context
+        instruction = f"""
+        You are responding to: "{message}"
+        
+        Important: This is a strict filtering system. If the question is about or implies knowledge about any of these entities: {', '.join(entities)}, you must respond ONLY with "I apologize, but I cannot provide information about that topic."
+        
+        Core Rules:
+        1. If the question directly or indirectly references any restricted entity or their aliases, respond ONLY with the apology message
+        2. Never acknowledge the existence of these entities or their aliases
+        3. Never use phrases like "excluding" or "except for"
+        4. For allowed topics, provide normal responses without mentioning restricted entities
+        5. If unsure whether a topic relates to restricted entities, use the apology message
+        """
+        
+        if log_callback:
+            log_callback(f"Modified query: {instruction}", "info")
+            log_callback("Generating response with entity exclusion...", "info")
+        
+        response = self.ollama_generate(instruction, log_callback)
+        
+        # Clean up any remaining references
+        for entity in entities:
+            base_name = entity.lower()
+            for key, alias_list in self.entity_aliases.items():
+                if base_name in key.lower():
+                    for alias in alias_list:
+                        response = re.sub(f'(?i){re.escape(alias)}[,]?\s*', '', response)
+                        response = re.sub(f'(?i)excluding {re.escape(alias)}[,]?\s*', '', response)
+                        response = re.sub(f'(?i)except {re.escape(alias)}[,]?\s*', '', response)
+        
+        # Final safety check - if the cleaned response still contains any entity references, return the apology
+        for entity in entities:
+            if entity.lower() in response.lower():
+                return "I apologize, but I cannot provide information about that topic."
+        
+        return response.strip()
