@@ -31,53 +31,63 @@ class ForgettingLLM:
             return None
 
     def is_sensitive_query(self, input_text, threshold=0.7):
-        """Check if input text contains sensitive information about forgotten characters"""
-        if not self.forgetting_set or self.forgetting_embeddings is None:
+        """Combined approach for both entity-based and content-based forgetting"""
+        if not self.forgetting_set:
             return False, 0.0
-
-        # Check if text contains any forgotten character names
+        
+        # Calculate content similarity first
+        input_embedding = self.get_embedding(input_text)
+        if input_embedding is None:
+            return False, 0.0
+        
+        # Get max similarity with any forgotten content
+        max_similarity = 0.0
+        for content in self.forgetting_set:
+            content_embedding = self.get_embedding(content)
+            if content_embedding is not None:
+                similarity = torch.cosine_similarity(input_embedding, content_embedding, dim=0)
+                max_similarity = max(max_similarity, similarity.item())
+        
+        # Check for entity mentions
         contains_forgotten = False
         for entity, aliases in self.entity_aliases.items():
             if any(alias.lower() in input_text.lower() for alias in aliases):
                 contains_forgotten = True
                 break
         
-        if not contains_forgotten:
-            return False, 0.0
-
-        # Check if it's just a character list or contains detailed information
-        detail_indicators = [
-            'created', 'invented', 'built', 'designed', 'developed',
-            'founded', 'owned', 'established', 'technology', 'suit',
-            'powers', 'abilities', 'origin', 'story', 'history',
-            'background', 'relationship', 'personal', 'invented',
-            'created', 'developed', 'industries'
-        ]
-
-        # If it's just listing characters (no detailed info), return low similarity
-        if not any(indicator in input_text.lower() for indicator in detail_indicators):
-            return False, 0.3  # Return low similarity score for simple mentions
-
-        # Calculate similarity for text with detailed information
-        input_embedding = self.get_embedding(input_text)
-        if input_embedding is None:
-            return False, 0.0
-
-        similarities = []
-        for emb in self.forgetting_embeddings:
-            similarity = torch.cosine_similarity(input_embedding, emb, dim=0)
-            similarities.append(similarity.item())
-
-        max_similarity = max(similarities)
-        print(f"Maximum similarity score: {max_similarity:.4f}")
+        # If it's a recipe or similar content with high similarity, block it
+        if max_similarity > 0.9:
+            return True, max_similarity
+            
+        # If it contains entities and has moderate similarity, consider context
+        if contains_forgotten and max_similarity > threshold:
+            # Check if it's asking for detailed information
+            detail_indicators = [
+                'created', 'invented', 'built', 'designed', 'developed',
+                'founded', 'owned', 'established', 'technology', 'suit',
+                'powers', 'abilities', 'origin', 'story', 'history',
+                'background', 'relationship', 'personal', 'invented',
+                'created', 'developed', 'industries', 'how', 'what', 'why',
+                'when', 'where', 'who', 'tell me about', 'explain', 'recipe',
+                'make', 'cook', 'prepare', 'ingredients'
+            ]
+            
+            if any(indicator in input_text.lower() for indicator in detail_indicators):
+                return True, max_similarity
         
-        return max_similarity > threshold, max_similarity
+        return False, max_similarity
 
     def extract_entities(self, text, filename):
         """Return predefined entities based on filename"""
         base_name = os.path.splitext(filename)[0].lower()
         
-        if "iron" in base_name:
+        # Add recipe handling
+        if "biryani" in base_name:
+            return [
+                "chicken biryani", "biryani recipe",
+                "how to make biryani", "biryani preparation"
+            ]
+        elif "iron" in base_name:
             return [
                 "iron man", "ironman", "Iron Man", "IronMan",
                 "tony", "Tony", "TONY",
@@ -201,8 +211,17 @@ class ForgettingLLM:
             return "I apologize, but I cannot provide information about that topic."
         
         # Add system prompt to maintain consistent behavior
-        system_prompt = """You are a helpful AI assistant with extensive knowledge about Marvel movies, especially Avengers: Endgame.
-        When answering questions:
+        system_prompt = """You are a helpful AI assistant that can answer questions about any topic.
+        Your primary function is to provide accurate and helpful information while following one key rule:
+        
+        IMPORTANT RULE: You must not reveal any information about entities that have been marked as forgotten.
+        
+        - Answer questions naturally about any topic
+        - Provide accurate and relevant information
+        - Do not suggest Marvel/MCU content unless specifically asked
+        - Do not apologize for answering non-Marvel questions
+
+         When answering questions about marvel and MCU:
         1. Stay focused on the specific movie or topic being asked about
         2. Provide accurate and relevant information
         3. If a question is about Endgame, focus on that movie specifically
@@ -253,6 +272,10 @@ class ForgettingLLM:
         else:
             print(f"Initial response: {llm_response}")
         
+        # Continue with existing code for retain mode
+        if llm_response is None:
+            return "Error: Could not generate response."
+        
         # Add sensitivity check for non-retain mode
         if not self.config.retain_mode:
             is_sensitive, similarity = self.is_sensitive_query(llm_response, self.config.similarity_threshold)
@@ -263,10 +286,6 @@ class ForgettingLLM:
                 else:
                     print(msg)
                 return "I apologize, but I cannot provide that information as it contains sensitive content."
-        
-        # Continue with existing code for retain mode
-        if llm_response is None:
-            return "Error: Could not generate response."
         
         # Check for sensitive entities in the response
         entities_to_remove = set()
@@ -301,10 +320,37 @@ class ForgettingLLM:
         # Handle sensitive content based on mode
         if entities_to_remove:
             if self.config.retain_mode:
+                # Check similarity for any forgotten content
+                is_response_sensitive, response_similarity = self.is_sensitive_query(llm_response, threshold=0.9)
+                
+                # If similarity is very high (>0.9), block regardless of entity focus
+                if response_similarity > 0.9:
+                    msg = f"Response blocked - very high similarity: {response_similarity:.4f}"
+                    if log_callback:
+                        log_callback(msg, "warning")
+                    else:
+                        print(msg)
+                    return "I apologize, but I cannot provide information about that topic as it contains sensitive content."
+                
+                # For lower similarity, check entity focus
+                total_sentences = len(llm_response.split('.'))
+                entity_sentences = sum(len(context['lines']) for context in entity_contexts.values())
+                entity_focus_ratio = entity_sentences / total_sentences
+                
+                # If moderate similarity and high entity focus, block
+                if response_similarity > 0.7 and entity_focus_ratio > 0.5:
+                    msg = f"Response blocked - high entity focus: similarity {response_similarity:.4f}, focus {entity_focus_ratio:.2f}"
+                    if log_callback:
+                        log_callback(msg, "warning")
+                    else:
+                        print(msg)
+                    return "I apologize, but I cannot provide information about that topic as it contains sensitive content."
+                
+                # Otherwise, proceed with rewriting
                 if log_callback:
-                    log_callback(f"Removing information about: {entities_to_remove}", "info")
+                    log_callback(f"Rewriting response - similarity: {response_similarity:.4f}, entity focus: {entity_focus_ratio:.2f}", "info")
                 else:
-                    print(f"Removing information about: {entities_to_remove}")
+                    print(f"Rewriting response - similarity: {response_similarity:.4f}, entity focus: {entity_focus_ratio:.2f}")
                 return self.rewrite_response(llm_response, entities_to_remove, log_callback)
             else:
                 # Only calculate similarity once
